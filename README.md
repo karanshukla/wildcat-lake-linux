@@ -27,7 +27,7 @@ timeline as of writing (2026-07-25).
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |
 | Face unlock | biopass cold-start latency (every auth attempt reloads models) | Fixed on fork branch (resident daemon) | [face-unlock-biopass/biopassd-resident-daemon.md](face-unlock-biopass/biopassd-resident-daemon.md) |
-| Face unlock | NPU/GPU acceleration for biopass inference | Implemented on fork branch, NPU itself blocked by driver maturity | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
+| Face unlock | NPU/GPU acceleration for biopass inference | NPU inference itself works (real speedups measured), but crashes the resident daemon with heap corruption — reverted, not deployed | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
 | Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
 
