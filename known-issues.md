@@ -9,23 +9,33 @@ Disabling VRR/adaptive sync crashes the Xe3 KMS driver. Confirmed as a known
 upstream work-in-progress issue (not something local config can work around).
 Watch upstream `xe` driver changelogs on kernel updates.
 
-## NPU acceleration — immature driver support
+## NPU acceleration — inference works, but crashes a real daemon process
 
-- Intel NPU driver `v1.35.0-rc1` describes itself as the "first public preview of
-  Wildcat Lake firmware support" as of late July 2026 — this is genuinely
-  early-silicon territory, not a configuration problem.
-- OpenVINO 2026.1 supports NPU 5020 in principle, but no prebuilt C++ ONNX Runtime
-  with an OpenVINO execution provider exists yet — building from source is
-  required if going through ONNX Runtime's own EP layer (see
-  [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md)
-  for a working approach that calls OpenVINO directly instead, sidestepping this).
+Update (2026-07-25): NPU inference itself is **not** blocked by driver
+maturity the way this section previously claimed — with the kernel driver,
+`oneapi-level-zero`, `intel-npu-driver`/`intel-npu-compiler`, and a vendored
+OpenVINO 2026.2.1 (Fedora's packaged 2025.1.0 is too old — protocol mismatch),
+two of three biopass models compiled and ran correctly on the NPU with real
+measured speedups. Full details and the software stack that got it working:
+[face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md).
+
+The actual open blocker is different and more serious: linking OpenVINO into a
+long-running multi-threaded daemon process (`biopassd`) crashed it with heap
+corruption on the first real use, reproducing even with the OpenVINO API
+never called at runtime — not root-caused yet, see the doc above. This is a
+threading/allocator interaction bug, not a driver-maturity gap.
+
+Remaining genuine driver-maturity notes:
+- Fixed/static shapes at compile time are a fundamental NPU constraint (not a
+  driver bug) — one of the three biopass models (YOLO face detection) has a
+  dynamic reshape buried inside its graph that hard-crashes the NPU compiler
+  and hasn't been worked around.
 - Practical scope for NPU on Linux today: local embeddings, webcam/CV-scale
-  models (face detection/recognition). LLM inference at 7B scale is outperformed
-  by a discrete GPU regardless. Fixed/static shapes at compile time are a
-  fundamental NPU constraint, not a driver bug.
+  models. LLM inference at 7B scale is outperformed by a discrete GPU
+  regardless.
 - No polished, packaged solution yet exists for Wayland-compatible KDE voice
-  typing using the Intel NPU (candidates: `whisper-npu-server`, OpenVINO GenAI's
-  `WhisperPipeline`) — noted as a want, not attempted.
+  typing using the Intel NPU (candidates: `whisper-npu-server`, OpenVINO
+  GenAI's `WhisperPipeline`) — noted as a want, not attempted.
 
 ## General assessment
 
