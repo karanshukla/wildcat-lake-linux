@@ -24,6 +24,7 @@ timeline as of writing (2026-07-25).
 | Display | VRR/adaptive sync crash-on-disable in `xe` driver | Unresolved, upstream WIP | [known-issues.md](known-issues.md) |
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
+| Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); firmware-level blocker still unresolved | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
 | Input | Keyboard remapping (Mac-style Alt-as-Cmd) | Active (keyd) | [input/keyd-mac-remap.md](input/keyd-mac-remap.md) |
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
@@ -43,7 +44,8 @@ audio/                     CS42L43 speaker EQ fix
 input/                     keyd remap, touchpad scroll fix
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend
 disk-encryption/           TPM2 LUKS auto-unlock
-power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang
+power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
+                           S0ix substates never entered
 known-issues.md            everything still open/unresolved
 ```
 
