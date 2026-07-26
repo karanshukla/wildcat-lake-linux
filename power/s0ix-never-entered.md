@@ -149,6 +149,8 @@ hardcoded supported-platform list, an upstream gap, not a packaging or config
 issue. (The CachyOS script's own model-ID allowlist is the identical list,
 lifted straight from `intel_lpmd`'s own check.)
 
+Filed upstream: [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123).
+
 There's a `--ignore-platform-check` flag to force it to run anyway. Tested it
 directly, twice, both suspend/resume cycles fully clean and confirmed real
 (see methodology note below): `substate_residencies` still reads zero with
@@ -241,10 +243,11 @@ S0i2/S0i3.
   thing blocking substate entry or a separate signal.
 - The recurring `nvme nvme0: failed to allocate host memory buffer` on every
   resume, unconnected to this investigation so far, but consistently present.
-- Whether Wildcat Lake support lands in a future `intel_lpmd` release (it's
-  clearly an active gap, not an abandoned platform, given Omarchy's ongoing
-  Panther Lake kernel work), and whether that alone would be enough once it
-  does.
+- Whether Wildcat Lake support lands in a future `intel_lpmd` release, tracked
+  upstream at [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123),
+  and whether that alone would be enough once it does (already tested no,
+  via `--ignore-platform-check`, but a real model-specific config might behave
+  differently than the generic fallback).
 - Whether this is fixable at all on current firmware, or another entry for
   the early-silicon pile like [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md)
   and [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
