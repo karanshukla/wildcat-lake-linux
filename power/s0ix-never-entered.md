@@ -1,8 +1,11 @@
 # Platform never enters S0ix (`substate_residencies` stuck at zero) during `s2idle`
 
 **Status:** Partially fixed. PCI runtime-PM was a real, confirmed gap and is now
-corrected. The platform still isn't reaching any S0ix substate, so a second,
-unidentified blocker (likely firmware-level) remains open.
+corrected. The platform still isn't reaching any S0ix substate. `biopassd`,
+Chrome/Claude Desktop, AC-vs-battery, and `intel_lpmd` not running are all
+ruled out with direct evidence. What's left points at firmware (Intel
+ME/CSE/ISH), not yet root-caused, likely not fixable from userspace on
+current firmware.
 
 ## Symptom
 
@@ -107,13 +110,115 @@ Ruled out:
 |---|---|---|
 | `biopassd` (resident face-unlock daemon, holds `/dev/video0` open) | Underlying USB camera device `power/{control,runtime_status}` shows `auto`/`suspended`, actually suspended at hardware level despite the open handle. | Not the blocker. Holding the fd open doesn't block device runtime suspend. |
 | Chrome / Claude Desktop / any userspace app | Kernel freezes all userspace tasks before suspending any device on the way into `s2idle`. A running Electron process can't hold a device active during actual sleep, it isn't running. `systemd-inhibit --list` shows only `delay`-type sleep inhibitors (NetworkManager, ModemManager, UPower, `kwin_wayland`, `claude-desktop`, all brief pre-suspend cleanup), no `block`-type ones. | Not the blocker. Journal confirms suspend actually happened and lasted the full 7h51m. |
+| AC power vs. battery | Tested both. | Not the blocker, zero residency either way. |
+| `intel_lpmd` not running | See below, real finding, but forcing it to run doesn't fix it either. | Not the blocker. |
+
+### `intel_lpmd` is installed, enabled, and silently dead on every boot
+
+Checking the community first: this exact hardware generation (Panther Lake /
+Wildcat Lake XPS) has an active Linux user base outside this repo, notably
+[Omarchy](https://github.com/basecamp/omarchy) (Arch + Hyprland, popular on
+these chips) and the community
+[`cachyos-xps-postinstall`](https://github.com/spencerbull/cachyos-xps-postinstall)
+toolkit, which explicitly ports Omarchy's Dell XPS Panther Lake hardware
+enablement work to CachyOS. Its `30-intel-power-media` module installs and
+enables `intel-lpmd` (Intel's own Low Power Mode Daemon, which actively
+manages core parking/EPP to help a platform reach S0ix) for a specific list
+of CPU model IDs.
+
+`intel-lpmd` turned out to already be installed on this machine
+(`intel-lpmd-0.1.0-2.fc44`), enabled, and running, sort of:
+
+```
+$ systemctl status intel_lpmd.service
+Active: inactive (dead) since ...; 14h ago
+Main PID: 892 (code=exited, status=2)
+```
+
+It exits immediately on every single boot. Running it directly in debug mode
+shows why:
+
+```
+[INFO]40 CPUID levels; family:model:stepping 0x6:d5:1 (6:213:1)
+[INFO]Platform not supported yet.
+[DEBUG]Supported platforms: family 6 models 151,154,170,172,183,186,189,191,204
+```
+
+This CPU is family 6 model 213 (`0xd5`, Wildcat Lake). Not in `intel_lpmd`'s
+hardcoded supported-platform list, an upstream gap, not a packaging or config
+issue. (The CachyOS script's own model-ID allowlist is the identical list,
+lifted straight from `intel_lpmd`'s own check.)
+
+There's a `--ignore-platform-check` flag to force it to run anyway. Tested it
+directly, twice, both suspend/resume cycles fully clean and confirmed real
+(see methodology note below): `substate_residencies` still reads zero with
+`intel_lpmd` running the whole time. So `intel_lpmd`'s absence wasn't the
+cause either, ruled out cleanly rather than left as a loose end.
+
+Kept it running permanently anyway via a systemd drop-in, since its actual
+job (EPP/core-parking management based on live utilization) is about
+*active*-idle efficiency, a different mechanism from suspend-time S0ix, so it
+can still be worth having even though it didn't fix this specific bug:
+
+```
+# /etc/systemd/system/intel_lpmd.service.d/override.conf
+[Service]
+ExecStart=
+ExecStart=/usr/bin/intel_lpmd --systemd --dbus-enable --ignore-platform-check
+```
+
+Falls back to the generic `/etc/intel_lpmd/intel_lpmd_config.xml` (no
+model-specific config exists for M213 yet), applied via `daemon-reload` +
+`restart`, confirmed `active (running)`.
+
+### Testing methodology note (matters if revisiting this)
+
+First attempt used `rtcwake -m mem -s N` to automate suspend/resume without
+touching the lid. This is a real, valid trap: `rtcwake` on this system writes
+directly to the kernel's `/sys/power/state`, bypassing `systemd-logind`
+entirely. Comparing journal output side by side:
+
+| | Real lid-close suspend | `rtcwake -m mem` |
+|---|---|---|
+| `systemd-logind: Lid closed` | yes | n/a |
+| `systemd-logind: The system will suspend now!` | yes | **no** |
+| `ModemManager: system is about to suspend` | yes | **no** |
+| Screen actually locks (`kscreenlocker_greet` spawns) | yes | **no** |
+
+Without logind's `Suspend()` D-Bus call, it never emits `PrepareForSleep`, so
+none of the processes holding `delay`-type sleep inhibitors (NetworkManager,
+ModemManager, UPower, `kwin_wayland`'s lock-the-screen action) get a chance
+to run their pre-suspend step, including the one that locks the screen. The
+kernel-level suspend itself is still real (`PM: suspend entry/exit`, correct
+`s2idle`, correct elapsed duration), so this didn't invalidate the original
+overnight finding (that was a real lid-close, went through logind properly).
+But it meant the two `intel_lpmd` test cycles done this way weren't a clean
+comparison to real-world suspend.
+
+Fix: arm the wake alarm separately, then suspend through the path that
+actually calls logind:
+
+```
+sudo rtcwake -m no -s 90       # arms the RTC alarm only, returns immediately
+sudo systemctl suspend         # goes through logind's real Suspend() D-Bus call
+```
+
+Confirmed this route is equivalent to a real lid-close: `kscreenlocker_greet`
+actually spawned and locked the session. Re-ran the `intel_lpmd` test this
+way, still zero residency, this is the result that stands.
 
 Not yet root-caused: `/sys/kernel/debug/pmc_core/substate_requirements` shows
 large pending-request counters against `CSE`/`CSMERTC` (Intel ME) and `ISH`
 (sensor hub) voltage-rail requirement bits. Firmware-level, not controlled by
-any userspace process or udev rule. Consistent with this repo's general
-early-silicon (stepping A0) pattern (see [../known-issues.md](../known-issues.md)),
-but not confirmed as root cause, no per-component blocker trace done yet.
+any userspace process, daemon, or udev rule. Consistent with this repo's
+general early-silicon (stepping A0) pattern (see
+[../known-issues.md](../known-issues.md)), but not confirmed as root cause,
+no per-component blocker trace done yet.
+
+One more loose thread worth a closer look separately: every resume in every
+test logged `nvme nvme0: failed to allocate host memory buffer`. Not yet
+connected to the S0ix problem, but a real recurring warning on every single
+resume regardless of test method.
 
 ## Trade-off / current state
 
@@ -134,6 +239,12 @@ S0i2/S0i3.
 - Whether `ltr_show`'s live `CURRENT_PLATFORM`/`AGGREGATED_SYSTEM` ~0.7ms
   aggregate requirement (observed once, not isolated to a source) is the same
   thing blocking substate entry or a separate signal.
+- The recurring `nvme nvme0: failed to allocate host memory buffer` on every
+  resume, unconnected to this investigation so far, but consistently present.
+- Whether Wildcat Lake support lands in a future `intel_lpmd` release (it's
+  clearly an active gap, not an abandoned platform, given Omarchy's ongoing
+  Panther Lake kernel work), and whether that alone would be enough once it
+  does.
 - Whether this is fixable at all on current firmware, or another entry for
   the early-silicon pile like [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md)
   and [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
