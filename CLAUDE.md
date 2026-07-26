@@ -19,7 +19,7 @@ the record of *why* those changes exist, not the files themselves.
 
 ```
 display/                   PSR/DSB display bug and fix
-audio/                      CS42L43 speaker EQ fix
+audio/                      CS42L43 speaker EQ fix, mic gain fix
 input/                      keyd remap, touchpad scroll fix, Claude Desktop quick-entry
 face-unlock-biopass/        biopass fork: resident daemon + NPU backend
 disk-encryption/            TPM2 LUKS auto-unlock

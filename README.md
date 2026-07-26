@@ -26,6 +26,7 @@ timeline as of writing (2026-07-25).
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
 | Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); `biopassd`/Chrome/AC-power/`intel_lpmd` all ruled out; firmware-level blocker still unresolved | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
+| Audio | Hot/noisy mic — UCM ships no default capture gain (boots at hardware max) | Fixed (persisted ALSA state) | [audio/cs42l43-mic-gain-fix.md](audio/cs42l43-mic-gain-fix.md) |
 | Input | Keyboard remapping (Mac-style Alt-as-Cmd) | Active (keyd) | [input/keyd-mac-remap.md](input/keyd-mac-remap.md) |
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |
@@ -40,7 +41,7 @@ See [known-issues.md](known-issues.md) for everything still open.
 
 ```
 display/                  PSR/DSB display bug and fix
-audio/                     CS42L43 speaker EQ fix
+audio/                     CS42L43 speaker EQ fix, mic gain fix
 input/                     keyd remap, touchpad scroll fix
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend
 disk-encryption/           TPM2 LUKS auto-unlock
