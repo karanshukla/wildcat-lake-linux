@@ -22,6 +22,7 @@ timeline as of writing (2026-07-25).
 |---|---|---|---|
 | Display | PSR2/DSB deadlock causing glitches under GPU load | Worked around (kernel boot args) | [display/psr-dsb-deadlock.md](display/psr-dsb-deadlock.md) |
 | Display | VRR/adaptive sync crash-on-disable in `xe` driver | Unresolved, upstream WIP | [known-issues.md](known-issues.md) |
+| Display | VRR reports capable+enabled but panel refresh never modulates (pinned 120Hz idle and during video) | Unresolved, confounded by a known KWin bug, root cause not isolated | [display/vrr-not-engaging.md](display/vrr-not-engaging.md) |
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
 | Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); `biopassd`/Chrome/AC-power/`intel_lpmd` all ruled out; firmware-level blocker still unresolved | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
@@ -41,7 +42,7 @@ See [known-issues.md](known-issues.md) for everything still open.
 ## Layout
 
 ```
-display/                  PSR/DSB display bug and fix
+display/                  PSR/DSB display bug and fix; VRR not engaging
 camera/                    kamoso raw-format 5fps issue
 audio/                     CS42L43 speaker EQ fix, mic gain fix
 input/                     keyd remap, touchpad scroll fix
