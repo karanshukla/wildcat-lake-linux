@@ -32,6 +32,7 @@ timeline as of writing (2026-07-25).
 | Input | Keyboard remapping (Mac-style Alt-as-Cmd) | Active (keyd) | [input/keyd-mac-remap.md](input/keyd-mac-remap.md) |
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |
+| Input | Tap-to-click misfires/cursor jumps while typing | Unresolved, root cause isolated (keyd breaks touchpad DWT) | [known-issues.md](known-issues.md) |
 | Face unlock | biopass cold-start latency (every auth attempt reloads models) | Fixed on fork branch (resident daemon) | [face-unlock-biopass/biopassd-resident-daemon.md](face-unlock-biopass/biopassd-resident-daemon.md) |
 | Face unlock | NPU/GPU acceleration for biopass inference | NPU inference itself works (real speedups measured), but crashes the resident daemon with heap corruption — reverted, not deployed | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
@@ -45,7 +46,7 @@ See [known-issues.md](known-issues.md) for everything still open.
 display/                  PSR/DSB display bug and fix; VRR not engaging
 camera/                    kamoso raw-format 5fps issue
 audio/                     CS42L43 speaker EQ fix, mic gain fix
-input/                     keyd remap, touchpad scroll fix
+input/                     keyd remap, touchpad scroll fix, keyd/DWT interaction
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;

@@ -44,6 +44,18 @@ Remaining genuine driver-maturity notes:
   typing using the Intel NPU (candidates: `whisper-npu-server`, OpenVINO
   GenAI's `WhisperPipeline`) — noted as a want, not attempted.
 
+## Touchpad — tap-to-click misfires while typing (keyd interaction)
+
+Tap-to-click cursor jumps and misfired clicks while typing, on a touchpad with
+no haptic feedback (tap-to-click is the only practical click method here).
+Root cause isolated via `libinput debug-events`: disable-while-typing (DWT) is
+enabled and works correctly when the physical keyboard drives events directly,
+but fails to fully suppress the touchpad when `keyd`'s virtual re-injected
+keyboard device drives the same keystrokes. Confirmed with a clean A/B (same
+hardware, same palm-swipe test, keyd stopped vs. running). Exact internal
+libinput mechanism not pinned down yet. Full investigation:
+[input/keyd-breaks-touchpad-dwt.md](input/keyd-breaks-touchpad-dwt.md).
+
 ## General assessment
 
 Wildcat Lake on Linux is genuinely early-silicon territory: the display (PSR/DSB),
