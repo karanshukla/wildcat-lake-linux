@@ -1,11 +1,12 @@
 # Platform never enters S0ix (`substate_residencies` stuck at zero) during `s2idle`
 
-**Status:** Partially fixed. PCI runtime-PM was a real, confirmed gap and is now
-corrected. The platform still isn't reaching any S0ix substate. `biopassd`,
-Chrome/Claude Desktop, AC-vs-battery, and `intel_lpmd` not running are all
-ruled out with direct evidence. What's left points at firmware (Intel
-ME/CSE/ISH), not yet root-caused, likely not fixable from userspace on
-current firmware.
+**Status:** Partially fixed, root cause of the remaining gap now isolated.
+PCI runtime-PM was a real, confirmed gap and is now corrected. The platform
+still isn't reaching any S0ix substate. `biopassd`, Chrome/Claude Desktop,
+AC-vs-battery, and `intel_lpmd` not running are all ruled out with direct
+evidence. The binding blocker is Intel ME (CSE), confirmed independent of the
+host `mei` driver, not ISH as earlier evidence suggested. Not fixable from
+Linux at all, this needs a Dell/Intel firmware update.
 
 ## Symptom
 
@@ -209,18 +210,85 @@ Confirmed this route is equivalent to a real lid-close: `kscreenlocker_greet`
 actually spawned and locked the session. Re-ran the `intel_lpmd` test this
 way, still zero residency, this is the result that stands.
 
-Not yet root-caused: `/sys/kernel/debug/pmc_core/substate_requirements` shows
-large pending-request counters against `CSE`/`CSMERTC` (Intel ME) and `ISH`
-(sensor hub) voltage-rail requirement bits. Firmware-level, not controlled by
-any userspace process, daemon, or udev rule. Consistent with this repo's
-general early-silicon (stepping A0) pattern (see
-[../known-issues.md](../known-issues.md)), but not confirmed as root cause,
-no per-component blocker trace done yet.
-
 One more loose thread worth a closer look separately: every resume in every
 test logged `nvme nvme0: failed to allocate host memory buffer`. Not yet
 connected to the S0ix problem, but a real recurring warning on every single
 resume regardless of test method.
+
+## Root cause #3 (confirmed): Intel ME (CSE), independent of the host `mei` driver
+
+A single snapshot of `substate_requirements` can't tell "always required since
+boot" apart from "actively blocking during this specific sleep." Fixed that by
+diffing the counter values immediately before suspend against immediately
+after resume, isolating exactly what accrued during the sleep window itself.
+
+Control cycle (~90s real `s2idle`, everything loaded as normal, driven through
+logind per the methodology note above, not `rtcwake` directly):
+
+| Signal | Delta over ~90s | Read |
+|---|---|---|
+| `XTAL_AGGR_OFF_STS`, `SOC_PLL_OFF_STS`, `CLINK_PGD0_PG_STS`, `SMT1`/`SMS1`/`SMS2`, `AON2`/`AON3`/`AON5` | +2,942,943 (identical across all of them) | Free-running reference clock, not a real blocker, ignore |
+| `CSE_PGD0_PG_STS` / `CSE_VNN_REQ_STS` | +65,332 | Continuously asserted "required" the entire sleep |
+| `CSMERTC_VNN_REQ_STS` | +65,298 | Tracks CSE almost exactly, expected (ME's RTC subcomponent) |
+| `ISH_VNN_REQ_STS` | 0 | Did not move, in this cycle or any other tested |
+
+`ISH_VNN_REQ_STS` read exactly 0 before, during, and after every test in this
+investigation, with the ISH driver stack fully loaded and sensors present.
+The earlier suspicion of ISH as a co-blocker doesn't hold up under an actual
+delta measurement, ISH is cleanly ruled out.
+
+CSE is the standout, and its counter climbs continuously through the sleep
+regardless. Tested whether that's the Linux `mei` host driver holding the
+ME device active, or the ME firmware's own independent behavior:
+
+```
+$ sudo rmmod mei_gsc_proxy && sudo rmmod mei_me && sudo rmmod mei
+$ ls /dev/mei*
+ls: cannot access '/dev/mei*': No such file or directory
+```
+
+Repeated the same suspend/diff cycle with the entire `mei` stack unloaded
+(`/dev/mei0` gone, no host driver bound at all):
+
+| Signal | Delta with `mei` loaded | Delta with `mei` unloaded |
+|---|---|---|
+| `CSE_PGD0_PG_STS` / `CSE_VNN_REQ_STS` | +65,332 | +65,263 |
+| `CSMERTC_VNN_REQ_STS` | +65,298 | +65,230 |
+
+Same rate within noise, unloading the host driver changed nothing. The
+Management Engine is its own co-processor running its own firmware
+independent of the host OS, and it kept asserting its power requirement with
+no Linux-side driver bound to it at all. This rules out every remaining
+userspace lever: no udev rule, no driver unbind, no systemd unit can touch
+this, it's ME firmware behavior. Only a Dell/Intel firmware (BIOS/ME) update
+could change it.
+
+Reloaded `mei`/`mei_me`/`mei_gsc_proxy` after, confirmed `mei_gsc_proxy`
+re-bound cleanly (`bound 0000:00:02.0 (ops xe_gsc_proxy_component_ops [xe])`),
+system fully back to its normal state.
+
+Consistent with this repo's general early-silicon (stepping A0) pattern, see
+[../known-issues.md](../known-issues.md).
+
+## For a bug report
+
+To Dell (BIOS/ME firmware), reproduce with:
+
+1. `sudo cat /sys/kernel/debug/pmc_core/substate_requirements`, note
+   `CSE_VNN_REQ_STS`/`CSE_PGD0_PG_STS` values.
+2. `sudo systemctl suspend` (lid-close or logind path, not `rtcwake` directly,
+   see methodology note above), sleep at least 60s, resume.
+3. Re-read `substate_requirements`, diff against step 1. `CSE_*` will have
+   climbed continuously through the sleep window while `substate_residencies`
+   stays at all-zero.
+4. Optionally confirm host-driver-independence: `sudo rmmod mei_gsc_proxy
+   mei_me mei`, repeat steps 1-3. Same climb rate, no `mei` bound at all.
+
+Platform: Dell XPS 13 DX13260, Wildcat Lake/Panther Lake stepping A0, GPU
+device ID `fd80`. Kernel 7.1.5-200.fc44, `s2idle` only (no S3). PCI
+runtime-PM already set to `auto` for all devices (prerequisite, not
+sufficient alone). This points at the ME/CSE firmware never releasing its own
+VNN/power-gating requirement, not at anything the OS controls.
 
 ## Trade-off / current state
 
@@ -235,19 +303,18 @@ S0i2/S0i3.
 
 ## Remaining questions
 
-- Which specific firmware component (ME/CSE, ISH, or something else) is the
-  binding LTR/VNN blocker. Needs a controlled suspend cycle with services
-  stopped one at a time, diffing `substate_requirements` before/after.
 - Whether `ltr_show`'s live `CURRENT_PLATFORM`/`AGGREGATED_SYSTEM` ~0.7ms
   aggregate requirement (observed once, not isolated to a source) is the same
-  thing blocking substate entry or a separate signal.
+  ME/CSE signal or a separate one.
 - The recurring `nvme nvme0: failed to allocate host memory buffer` on every
   resume, unconnected to this investigation so far, but consistently present.
 - Whether Wildcat Lake support lands in a future `intel_lpmd` release, tracked
-  upstream at [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123),
-  and whether that alone would be enough once it does (already tested no,
-  via `--ignore-platform-check`, but a real model-specific config might behave
-  differently than the generic fallback).
-- Whether this is fixable at all on current firmware, or another entry for
-  the early-silicon pile like [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md)
-  and [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
+  upstream at [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123).
+  Moot for this specific bug either way, `intel_lpmd` manages CPU
+  core-parking/EPP, not ME firmware state, so it was never going to touch
+  this blocker regardless of platform-check support.
+- Whether Dell ships a BIOS/ME firmware update that changes this behavior.
+  This is now confirmed as the only remaining lever, nothing left to try from
+  the OS side. Otherwise, another entry for the early-silicon pile like
+  [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md) and
+  [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
