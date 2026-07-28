@@ -29,6 +29,7 @@ timeline as of writing (2026-07-25).
 | Camera | kamoso negotiates raw YUYV @ 1080p, capped at 5fps (Chrome unaffected) | Workaround (avoid kamoso, or cap its resolution); app itself unpatched | [camera/kamoso-raw-format-5fps.md](camera/kamoso-raw-format-5fps.md) |
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
 | Audio | Hot/noisy mic — UCM ships no default capture gain (boots at hardware max) | Fixed (persisted ALSA state) | [audio/cs42l43-mic-gain-fix.md](audio/cs42l43-mic-gain-fix.md) |
+| Audio | LMMS crackles playing note sequences (single notes fine); Akai MPK mini play MIDI setup | Fix applied (buffer bump, PipeWire rate config, RT scheduling grant), verification pending next login | [audio/lmms-crackle-and-midi.md](audio/lmms-crackle-and-midi.md) |
 | Input | Keyboard remapping (Mac-style Alt-as-Cmd) | Active (keyd) | [input/keyd-mac-remap.md](input/keyd-mac-remap.md) |
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |
@@ -45,7 +46,7 @@ See [known-issues.md](known-issues.md) for everything still open.
 ```
 display/                  PSR/DSB display bug and fix; VRR not engaging
 camera/                    kamoso raw-format 5fps issue
-audio/                     CS42L43 speaker EQ fix, mic gain fix
+audio/                     CS42L43 speaker EQ fix, mic gain fix, LMMS crackle/MIDI setup
 input/                     keyd remap, touchpad scroll fix, keyd/DWT interaction
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend
 disk-encryption/           TPM2 LUKS auto-unlock
