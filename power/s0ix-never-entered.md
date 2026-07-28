@@ -174,6 +174,15 @@ Falls back to the generic `/etc/intel_lpmd/intel_lpmd_config.xml` (no
 model-specific config exists for M213 yet), applied via `daemon-reload` +
 `restart`, confirmed `active (running)`.
 
+Since a proper fix (`id_table` entry + tuned config, instead of just
+ignoring the platform check) looked doable, built and tested one from
+source. Confirmed on this hardware: `intel_lpmd`'s own CPUID-based
+detection reports 2 P-cores, 0 E-cores, 4 L-cores (`2P0E4L-15W`), matching
+Intel ARK's published spec for the Core 5 320 (2 Performance-cores, 0
+Efficient-cores, 4 Low Power Efficient-cores) and *not* what `lscpu -e`'s
+L2-instance grouping suggests (looks like a single E-core cluster). Opened
+upstream: [intel/intel-lpmd#124](https://github.com/intel/intel-lpmd/pull/124).
+
 ### Testing methodology note (matters if revisiting this)
 
 First attempt used `rtcwake -m mem -s N` to automate suspend/resume without
@@ -308,8 +317,9 @@ S0i2/S0i3.
   ME/CSE signal or a separate one.
 - The recurring `nvme nvme0: failed to allocate host memory buffer` on every
   resume, unconnected to this investigation so far, but consistently present.
-- Whether Wildcat Lake support lands in a future `intel_lpmd` release, tracked
-  upstream at [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123).
+- Whether Wildcat Lake support lands in a future `intel_lpmd` release. Issue
+  filed at [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123),
+  fix proposed at [intel/intel-lpmd#124](https://github.com/intel/intel-lpmd/pull/124).
   Moot for this specific bug either way, `intel_lpmd` manages CPU
   core-parking/EPP, not ME firmware state, so it was never going to touch
   this blocker regardless of platform-check support.
