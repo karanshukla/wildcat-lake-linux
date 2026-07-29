@@ -1,5 +1,11 @@
 # Face unlock — biopass fork
 
+**Status (2026-07-29): superseded.** Moved to
+[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) for face unlock
+going forward; this fork is no longer being actively developed. Left in place
+as the investigation record for the cold-start and NPU work below — still
+relevant background if AuthFace hits similar issues.
+
 **Upstream project:** [TickLabVN/biopass](https://github.com/TickLabVN/biopass)
 **Fork/branch:** [karanshukla/biopass @ `feat/resident-biopassd`](https://github.com/karanshukla/biopass/compare/main...karanshukla:biopass:feat/resident-biopassd)
 **Filed upstream issues:** [#151](https://github.com/TickLabVN/biopass/issues/151) (NPU/GPU acceleration), [#152](https://github.com/TickLabVN/biopass/issues/152) (cold-start latency)
@@ -32,6 +38,14 @@ This fork branch fixes that in two independent ways:
 | ONNX Runtime intra-op thread tuning | Implemented, on fork branch |
 | OpenVINO NPU/GPU backend | Implemented (opt-in build flag), on fork branch |
 | NPU acceleration actually engaging on Wildcat Lake | Blocked — see [npu-openvino-backend.md](npu-openvino-backend.md) for driver-maturity caveats |
+
+## Superseded by AuthFace
+
+As of 2026-07-29, face unlock on this machine uses
+[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) instead. No
+investigation docs exist for it yet under this repo — this section will be
+filled in (or a sibling `face-unlock-authface/` directory added) once there's
+something concrete to document.
 
 ## Machine context
 

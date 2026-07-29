@@ -22,7 +22,7 @@ display/                   PSR/DSB display bug and fix
 camera/                     kamoso raw-format 5fps issue
 audio/                      CS42L43 speaker EQ fix, mic gain fix
 input/                      keyd remap, touchpad scroll fix, Claude Desktop quick-entry
-face-unlock-biopass/        biopass fork: resident daemon + NPU backend
+face-unlock-biopass/        biopass fork: resident daemon + NPU backend (superseded by AuthFace)
 disk-encryption/            TPM2 LUKS auto-unlock
 power/                      S3 deep-sleep hang, s2idle rapid-resume hang, S0ix-never-entered
 known-issues.md             everything still open/unresolved
@@ -62,15 +62,21 @@ As soon as something in it gets resolved or worked around, move its narrative
 into a doc under the relevant topic directory, link that doc from
 `known-issues.md`'s history, and update `README.md`'s status table.
 
-## The biopass fork
+## The biopass fork (superseded)
 
 `face-unlock-biopass/` documents work on a fork of
 [TickLabVN/biopass](https://github.com/TickLabVN/biopass) (branch
 `karanshukla/biopass @ feat/resident-biopassd`), not code in this repo. Two
 upstream issues are filed against it (#151 NPU/GPU, #152 cold-start latency).
-When updating these docs, keep the status table in
-`face-unlock-biopass/README.md` in sync with what's actually implemented on
-the fork branch vs. merely investigated.
+As of 2026-07-29, face unlock has moved to
+[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) — the biopass
+fork is no longer being actively developed, but the docs stay as the
+investigation record rather than being deleted. When updating these docs,
+keep the status table in `face-unlock-biopass/README.md` in sync with what's
+actually implemented on the fork branch vs. merely investigated. New
+face-unlock work should get its own `face-unlock-authface/` directory
+following the same doc conventions once there's something concrete to write
+up.
 
 ## Git
 

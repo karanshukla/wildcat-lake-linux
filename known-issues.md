@@ -18,6 +18,12 @@ breaking VRR detection). Full investigation:
 
 ## NPU acceleration — inference works, but crashes a real daemon process
 
+Update (2026-07-29): moot for now — face unlock moved from biopass to
+[AuthFace](https://github.com/pfalkingham/authFace) (see
+[face-unlock-biopass/README.md](face-unlock-biopass/README.md)), so the
+biopassd heap-corruption bug below is no longer being chased. Left in place
+since the NPU/OpenVINO stack findings are still generally useful evidence.
+
 Update (2026-07-25): NPU inference itself is **not** blocked by driver
 maturity the way this section previously claimed — with the kernel driver,
 `oneapi-level-zero`, `intel-npu-driver`/`intel-npu-compiler`, and a vendored

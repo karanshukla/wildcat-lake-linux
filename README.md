@@ -34,8 +34,8 @@ timeline as of writing (2026-07-25).
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |
 | Input | Tap-to-click misfires/cursor jumps while typing | Unresolved, root cause isolated (keyd breaks touchpad DWT) | [known-issues.md](known-issues.md) |
-| Face unlock | biopass cold-start latency (every auth attempt reloads models) | Fixed on fork branch (resident daemon) | [face-unlock-biopass/biopassd-resident-daemon.md](face-unlock-biopass/biopassd-resident-daemon.md) |
-| Face unlock | NPU/GPU acceleration for biopass inference | NPU inference itself works (real speedups measured), but crashes the resident daemon with heap corruption — reverted, not deployed | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
+| Face unlock | biopass cold-start latency (every auth attempt reloads models) | Superseded — moved to [AuthFace](https://github.com/pfalkingham/authFace); fork left as investigation record | [face-unlock-biopass/biopassd-resident-daemon.md](face-unlock-biopass/biopassd-resident-daemon.md) |
+| Face unlock | NPU/GPU acceleration for biopass inference | Superseded — moved to [AuthFace](https://github.com/pfalkingham/authFace); fork left as investigation record | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
 | Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
 
@@ -48,7 +48,7 @@ display/                  PSR/DSB display bug and fix; VRR not engaging
 camera/                    kamoso raw-format 5fps issue
 audio/                     CS42L43 speaker EQ fix, mic gain fix, LMMS crackle/MIDI setup
 input/                     keyd remap, touchpad scroll fix, keyd/DWT interaction
-face-unlock-biopass/       biopass fork: resident daemon + NPU backend
+face-unlock-biopass/       biopass fork: resident daemon + NPU backend (superseded by AuthFace)
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
                            S0ix substates never entered
@@ -61,5 +61,6 @@ maintainer would need to reproduce or act on it.
 
 ## Related
 
-- biopass fork (face-unlock cold-start + NPU work): [karanshukla/biopass @ feat/resident-biopassd](https://github.com/karanshukla/biopass/compare/main...karanshukla:biopass:feat/resident-biopassd)
+- Face unlock (current): [pfalkingham/AuthFace](https://github.com/pfalkingham/authFace)
+- biopass fork (superseded, kept as investigation record for cold-start + NPU work): [karanshukla/biopass @ feat/resident-biopassd](https://github.com/karanshukla/biopass/compare/main...karanshukla:biopass:feat/resident-biopassd)
 - Upstream biopass issues filed: [#151](https://github.com/TickLabVN/biopass/issues/151) (NPU/GPU), [#152](https://github.com/TickLabVN/biopass/issues/152) (cold-start latency)
