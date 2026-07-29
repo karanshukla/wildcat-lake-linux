@@ -47,9 +47,15 @@ AuthFace's IR-only pipeline is already fast, but ships with no anti-spoofing —
 current work is adding NPU-accelerated anti-spoof inference on top of it to
 get properly secure IR-only face unlock without giving up that speed. The
 OpenVINO/NPU groundwork from this fork (below) is directly relevant background
-for that. No investigation docs exist for the AuthFace work yet under this
-repo — this section will be filled in (or a sibling `face-unlock-authface/`
-directory added) once there's something concrete to document.
+for that.
+
+Fedora and Intel haven't upstreamed current NPU driver/runtime versions yet
+(same driver-maturity gap noted in the OpenVINO doc below), so this work is
+being done against bleeding-edge binaries installed directly rather than
+distro packages, and will need revisiting once upstream catches up. No
+investigation docs exist for the AuthFace work yet under this repo — this
+section will be filled in (or a sibling `face-unlock-authface/` directory
+added) once there's something concrete to document.
 
 ## Machine context
 
