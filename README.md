@@ -36,7 +36,8 @@ timeline as of writing (2026-07-25).
 | Input | Tap-to-click misfires/cursor jumps while typing | Unresolved, root cause isolated (keyd breaks touchpad DWT) | [known-issues.md](known-issues.md) |
 | Face unlock | biopass cold-start latency (every auth attempt reloads models) | Superseded — moved to [AuthFace](https://github.com/pfalkingham/authFace); fork left as investigation record | [face-unlock-biopass/biopassd-resident-daemon.md](face-unlock-biopass/biopassd-resident-daemon.md) |
 | Face unlock | NPU/GPU acceleration for biopass inference | Superseded — moved to [AuthFace](https://github.com/pfalkingham/authFace); fork left as investigation record | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
-| Face unlock | AuthFace is fast (IR-only) but ships with no anti-spoofing | Active work — adding NPU-accelerated anti-spoof inference on top of AuthFace's pipeline | [face-unlock-biopass/README.md](face-unlock-biopass/README.md) |
+| Face unlock | AuthFace NPU inference backend (OpenVINO) | Working, on a branch — required hand-patching the NPU driver (Fedora's package is both too old and missing the compiler libs) | [face-unlock-authface/npu-openvino-backend.md](face-unlock-authface/npu-openvino-backend.md) |
+| Face unlock | AuthFace shipped with no anti-spoofing | Motion-liveness gate shipped; screen-spoofing confirmed blocked by IR-illuminator physics (not software); printed-photo resistance still open | [face-unlock-authface/liveness-and-antispoof.md](face-unlock-authface/liveness-and-antispoof.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
 | Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
 
@@ -50,6 +51,7 @@ camera/                    kamoso raw-format 5fps issue
 audio/                     CS42L43 speaker EQ fix, mic gain fix, LMMS crackle/MIDI setup
 input/                     keyd remap, touchpad scroll fix, keyd/DWT interaction
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend (superseded by AuthFace)
+face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, screen-spoof physics finding
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
                            S0ix substates never entered
@@ -62,6 +64,6 @@ maintainer would need to reproduce or act on it.
 
 ## Related
 
-- Face unlock (current): [pfalkingham/AuthFace](https://github.com/pfalkingham/authFace)
+- Face unlock (current): [pfalkingham/AuthFace](https://github.com/pfalkingham/authFace), fork with NPU backend + liveness: [karanshukla/vinoAuthFace @ npu-openvino-liveness](https://github.com/karanshukla/vinoAuthFace/tree/npu-openvino-liveness)
 - biopass fork (superseded, kept as investigation record for cold-start + NPU work): [karanshukla/biopass @ feat/resident-biopassd](https://github.com/karanshukla/biopass/compare/main...karanshukla:biopass:feat/resident-biopassd)
 - Upstream biopass issues filed: [#151](https://github.com/TickLabVN/biopass/issues/151) (NPU/GPU), [#152](https://github.com/TickLabVN/biopass/issues/152) (cold-start latency)

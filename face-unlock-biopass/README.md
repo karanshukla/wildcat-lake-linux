@@ -42,20 +42,24 @@ This fork branch fixes that in two independent ways:
 ## Superseded by AuthFace
 
 As of 2026-07-29, face unlock on this machine uses
-[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) instead.
-AuthFace's IR-only pipeline is already fast, but ships with no anti-spoofing —
-current work is adding NPU-accelerated anti-spoof inference on top of it to
-get properly secure IR-only face unlock without giving up that speed. The
-OpenVINO/NPU groundwork from this fork (below) is directly relevant background
-for that.
+[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) instead. The
+OpenVINO/NPU groundwork from this fork (below) turned out directly relevant:
+AuthFace now has its own NPU backend and anti-spoofing work, documented under
+[../face-unlock-authface/](../face-unlock-authface/README.md) — including why
+AuthFace's non-daemon architecture sidesteps the exact heap-corruption crash
+that ended the OpenVINO work on this fork (see
+[npu-openvino-backend.md](npu-openvino-backend.md#critical-crashes-the-resident-daemon-do-not-deploy)),
+and why the anti-spoofing work ended up as a motion-liveness check plus a
+hardware-physics finding (screen-spoofing blocked by the IR illuminator, not
+software) rather than the NPU-accelerated anti-spoof classifier originally
+planned.
 
-Fedora and Intel haven't upstreamed current NPU driver/runtime versions yet
-(same driver-maturity gap noted in the OpenVINO doc below), so this work is
-being done against bleeding-edge binaries installed directly rather than
-distro packages, and will need revisiting once upstream catches up. No
-investigation docs exist for the AuthFace work yet under this repo — this
-section will be filled in (or a sibling `face-unlock-authface/` directory
-added) once there's something concrete to document.
+Fedora and Intel still haven't upstreamed current NPU driver/runtime versions
+(same driver-maturity gap noted in the OpenVINO doc below, now compounded —
+see [../face-unlock-authface/npu-openvino-backend.md](../face-unlock-authface/npu-openvino-backend.md)
+for the version-skew direction reversing and a second, independent packaging
+gap found four days later), so that work is also running against hand-patched
+binaries rather than distro packages.
 
 ## Machine context
 

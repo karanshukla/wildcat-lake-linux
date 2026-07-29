@@ -23,6 +23,13 @@ Update (2026-07-29): moot for now — face unlock moved from biopass to
 [face-unlock-biopass/README.md](face-unlock-biopass/README.md)), so the
 biopassd heap-corruption bug below is no longer being chased. Left in place
 since the NPU/OpenVINO stack findings are still generally useful evidence.
+AuthFace's own NPU work (same day) got both models working on-device — see
+[face-unlock-authface/npu-openvino-backend.md](face-unlock-authface/npu-openvino-backend.md)
+— including a second, independent Fedora packaging gap (NPU compiler
+libraries never shipped at all, any version) beyond the version-skew problem
+this section already describes. AuthFace's architecture (short-lived
+per-invocation process, not a resident daemon) never had the chance to
+reproduce the heap-corruption bug below one way or the other.
 
 Update (2026-07-25): NPU inference itself is **not** blocked by driver
 maturity the way this section previously claimed — with the kernel driver,
