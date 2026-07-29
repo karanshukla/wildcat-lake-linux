@@ -42,10 +42,14 @@ This fork branch fixes that in two independent ways:
 ## Superseded by AuthFace
 
 As of 2026-07-29, face unlock on this machine uses
-[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) instead. No
-investigation docs exist for it yet under this repo — this section will be
-filled in (or a sibling `face-unlock-authface/` directory added) once there's
-something concrete to document.
+[pfalkingham/AuthFace](https://github.com/pfalkingham/authFace) instead.
+AuthFace's IR-only pipeline is already fast, but ships with no anti-spoofing —
+current work is adding NPU-accelerated anti-spoof inference on top of it to
+get properly secure IR-only face unlock without giving up that speed. The
+OpenVINO/NPU groundwork from this fork (below) is directly relevant background
+for that. No investigation docs exist for the AuthFace work yet under this
+repo — this section will be filled in (or a sibling `face-unlock-authface/`
+directory added) once there's something concrete to document.
 
 ## Machine context
 
