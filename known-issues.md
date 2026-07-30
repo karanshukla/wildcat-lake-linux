@@ -56,6 +56,25 @@ Remaining genuine driver-maturity notes:
 - No polished, packaged solution yet exists for Wayland-compatible KDE voice
   typing using the Intel NPU (candidates: `whisper-npu-server`, OpenVINO
   GenAI's `WhisperPipeline`) — noted as a want, not attempted.
+- Want: NPU-powered real-time mic noise suppression, replacing CPU-based
+  options (NoiseTorch/RNNoise, DeepFilterNet's default CPU backend). Intel
+  already provides the pieces, just not glued together for this: DeepFilterNet2/3
+  converted to OpenVINO IR with NPU as a selectable device is proven working in
+  [openvino-plugins-ai-audacity](https://github.com/intel/openvino-plugins-ai-audacity/blob/main/doc/feature_doc/noise_suppression/README.md)
+  (models: [Intel/deepfilternet-openvino](https://huggingface.co/Intel/deepfilternet-openvino)
+  on Hugging Face), but that plugin processes static Audacity tracks, not a live
+  mic stream. A real-time PipeWire version would need to be built by combining
+  that model with a streaming architecture like
+  [yas-sim/openvino-real-time-noise-suppression-demo](https://github.com/yas-sim/openvino-real-time-noise-suppression-demo)
+  (currently CPU/GPU/MYRIAD-only, PyAudio-based, no PipeWire). Non-trivial part
+  is the GRU hidden-state bookkeeping between frames plus the STFT/ERB-band math
+  that sits outside the ONNX/IR graph, best cribbed from the Audacity plugin's
+  C++ source rather than reimplemented from the paper. Speaker-side "ML EQ" for
+  the tinny-speaker problem doesn't have an NPU equivalent worth chasing; that
+  stays DSP/psychoacoustic (EasyEffects), same as the existing
+  [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) fix. Not started — parking
+  here until there's time to build it; will get its own doc under `audio/` once
+  there's something concrete.
 
 ## Touchpad — tap-to-click misfires while typing (keyd interaction)
 
