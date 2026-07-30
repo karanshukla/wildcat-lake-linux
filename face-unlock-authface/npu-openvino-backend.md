@@ -1,8 +1,8 @@
 # AuthFace: OpenVINO NPU inference backend
 
-**Fork/branch:** [karanshukla/vinoAuthFace @ `npu-openvino-liveness`](https://github.com/karanshukla/vinoAuthFace/tree/npu-openvino-liveness) (fork of [pfalkingham/authFace](https://github.com/pfalkingham/authFace))
+**Fork/branch:** [karanshukla/vinoAuthFace @ `main`](https://github.com/karanshukla/vinoAuthFace) (fork of [pfalkingham/authFace](https://github.com/pfalkingham/authFace); previously tracked on `npu-openvino-liveness`, merged to `main` via PR #1 on 2026-07-30)
 
-> **Status (2026-07-29): working, on a branch, not yet merged to `main`.**
+> **Status (2026-07-30): working, merged to `main`.**
 > Both of AuthFace's ONNX models (face detector, face recognizer) compile and
 > run correctly on the NPU, gated behind an opt-in `npu` Cargo feature
 > (default off — the existing `tract-onnx` CPU backend is unchanged unless
@@ -11,6 +11,21 @@
 > below. Real end-to-end authentication (camera capture → detect → recognize
 > → verify) measured at 0.5–0.8s total, most of it now camera/liveness-gate
 > time rather than inference.
+>
+> **2026-07-30 update:** the face detector had a real correctness bug up to
+> this point, fixed in `ef66571`. `version-slim-320.onnx` strips anchor
+> decoding out of the ONNX graph, so its `boxes` output is raw SSD regression
+> deltas, not finished coordinates, and the code was treating them as
+> finished coordinates. Input normalization was also wrong ([0,1] instead of
+> the `(px-127)/128` range the model was trained on). Neither bug touched the
+> face/no-face *confidence score* used to gate detection (that comes from a
+> separate `scores` tensor, unaffected by box decoding), so prior detection
+> results and the phone-screen anti-spoof finding below still hold. What was
+> broken: the detected box itself was unusable, so the encoder was getting
+> the full, uncropped frame instead of a face crop. Fixed now: proper
+> anchor-grid regeneration + delta decode (verified against the upstream
+> reference implementation) and a crop-to-face-with-margin step before
+> encoding.
 
 ## Why this is a second attempt at the same problem
 

@@ -1,12 +1,12 @@
 # Face unlock — AuthFace
 
-**Status (2026-07-29): active, in daily use.** Replaced the biopass fork (see
+**Status (2026-07-30): active, in daily use.** Replaced the biopass fork (see
 [../face-unlock-biopass/README.md](../face-unlock-biopass/README.md)) as face
 unlock on this machine. Both docs below are work done on top of upstream
 AuthFace, not upstream code itself.
 
 **Upstream project:** [pfalkingham/authFace](https://github.com/pfalkingham/authFace)
-**Fork/branch:** [karanshukla/vinoAuthFace @ `npu-openvino-liveness`](https://github.com/karanshukla/vinoAuthFace/tree/npu-openvino-liveness)
+**Fork/branch:** [karanshukla/vinoAuthFace @ `main`](https://github.com/karanshukla/vinoAuthFace) (work previously tracked on `npu-openvino-liveness`, merged to `main` via PR #1 on 2026-07-30)
 
 AuthFace is a Rust, static-binary, IR-only face-unlock stack for PAM
 (`sudo`, KDE lock screen) — no resident daemon, no D-Bus, no GUI dependency
@@ -17,7 +17,7 @@ machine specifically for its immutable-distro-friendly deploy model and
 because it has no resident-daemon architecture to hit the class of crash that
 ended the biopass NPU work (see the NPU doc below).
 
-Two pieces of work on top of it:
+Three pieces of work on top of it:
 
 1. **[npu-openvino-backend.md](npu-openvino-backend.md)** — an opt-in
    OpenVINO NPU inference backend (Cargo feature `npu`, default off). Both
@@ -25,23 +25,30 @@ Two pieces of work on top of it:
    (`Intel(R) AI Boost`); real end-to-end auth measured at 0.5–0.8s. Required
    hand-patching this machine's NPU driver — Fedora's packaged version is
    both too old for OpenVINO 2026.2's plugin protocol *and* missing the NPU
-   compiler libraries entirely, independent of version.
+   compiler libraries entirely, independent of version. A real detector
+   box-decode/normalization bug (2026-07-30, `ef66571`) was fixed on top of
+   this; didn't affect detection confidence scoring, but did mean the
+   encoder was seeing full uncropped frames instead of face crops until now.
 2. **[liveness-and-antispoof.md](liveness-and-antispoof.md)** — upstream
-   AuthFace ships with zero anti-spoofing. Added a motion-based liveness
-   gate, and separately confirmed (empirically, under two different ambient
-   lighting conditions including a fully dark room) that screen-based
-   spoofing — a phone/tablet showing a photo of the victim — is blocked by
-   this hardware's IR-illuminator physics, not by any software logic.
+   AuthFace ships with zero anti-spoofing. Three independent layers now
+   shipped: a motion-based liveness gate; an empirically confirmed finding
+   (two ambient-lighting conditions including a fully dark room) that
+   screen-based spoofing is blocked by this hardware's IR-illuminator
+   physics, not software; and (2026-07-30) physical-USB-bus-path camera
+   pinning, which closes a *different* threat (frame injection from a
+   substituted USB device) that the other two layers don't address at all.
    Printed-photo resistance remains untested and open.
 
 ## Status
 
 | Piece | State |
 |---|---|
-| OpenVINO NPU backend (detector + recognizer) | Implemented, opt-in `npu` Cargo feature, on fork branch |
-| Portable scan-interval (queries camera's native V4L2 frame rate instead of a hardcoded default) | Implemented, on fork branch |
-| Motion-based liveness gate | Implemented, on fork branch, shipped in `authenticate_scan` |
+| OpenVINO NPU backend (detector + recognizer) | Implemented, merged to `main`, opt-in `npu` Cargo feature |
+| Detector box-decode + input-normalization fix, face-crop-before-encode | Fixed 2026-07-30 (`ef66571`) |
+| Portable scan-interval (queries camera's native V4L2 frame rate instead of a hardcoded default) | Implemented, merged to `main` |
+| Motion-based liveness gate | Implemented, merged to `main`, shipped in `authenticate_scan` |
 | Screen-spoof-blocked-by-physics | Confirmed empirically, not a code change — hardware property |
+| Camera identity pinning (physical USB bus path + function index, frame-injection defense) | Implemented, merged to `main`, opt-in (`pin-camera.sh`, not wired into `deploy.sh`) |
 | Printed-photo anti-spoof | **Open** — no test material available yet |
 | NPU-accelerated anti-spoof *model* (the originally planned approach) | Not pursued — see [liveness-and-antispoof.md](liveness-and-antispoof.md#why-this-didnt-become-an-npu-anti-spoof-model) for why |
 | Bundled GTK4 settings GUI | Removed from this fork's build (dnf dependency-chain cost); source retained in repo |

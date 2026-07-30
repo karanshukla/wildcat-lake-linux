@@ -1,18 +1,25 @@
-# AuthFace: liveness gate + screen-spoof-blocked-by-physics finding
+# AuthFace: liveness gate + anti-spoof layers
 
-**Fork/branch:** [karanshukla/vinoAuthFace @ `npu-openvino-liveness`](https://github.com/karanshukla/vinoAuthFace/tree/npu-openvino-liveness)
+**Fork/branch:** [karanshukla/vinoAuthFace @ `main`](https://github.com/karanshukla/vinoAuthFace) (merged from `npu-openvino-liveness` via PR #1 on 2026-07-30)
 
-> **Status (2026-07-29): motion-liveness shipped; screen-spoofing confirmed
-> blocked by sensor hardware, not software; printed-photo resistance still
-> untested and open.**
+> **Status (2026-07-30): three independent layers shipped (motion-liveness,
+> screen-spoof-blocked-by-physics, camera-identity pinning); printed-photo
+> resistance still untested and open.**
 > Upstream AuthFace ships with no anti-spoofing at all — this was the primary
 > gap flagged when adopting it as biopass's replacement (see
 > [../face-unlock-biopass/README.md](../face-unlock-biopass/README.md)). The
 > original plan here was "NPU-accelerated anti-spoof inference" (an ML
 > classifier stage, mirroring biopass's approach). What actually shipped is
-> different and cheaper: a motion heuristic plus a hardware-physics argument,
-> not a learned model — documented honestly below, including why the plan
-> changed.
+> different and cheaper: a motion heuristic, a hardware-physics argument, and
+> (2026-07-30) a physical-USB-identity check, not a learned model, documented
+> honestly below, including why the plan changed.
+>
+> **2026-07-30 note:** the production face detector had a box-decode/
+> normalization bug up to this point (`ef66571`), fixed after this doc's
+> Layer 2 finding was recorded. It didn't affect the face/no-face confidence
+> score the phone-screen test below relies on (separate tensor, unaffected by
+> box decoding), so that finding still holds as recorded. See
+> [npu-openvino-backend.md](npu-openvino-backend.md) for the fix detail.
 
 ## Why this didn't become an NPU anti-spoof model
 
@@ -121,6 +128,49 @@ either direction:
 of the victim) is blocked by this hardware's sensor+illuminator physics, not
 by anything built in software. Confirmed under two different ambient-lighting
 conditions, not theorized.
+
+## Layer 3: physical USB-identity pinning, a different threat model (shipped 2026-07-30)
+
+Layers 1 and 2 above defend against *presentation* attacks: something held up
+to the real, legitimate camera. They don't defend against *injection*: a USB
+device plugged in that claims the real camera's VID/PID (any device can claim
+any VID/PID, it's just a string) and feeds `face-auth` synthetic or replayed
+frames directly, bypassing the real sensor entirely. `pin-camera.sh` (new
+script) closes this specific gap, independent of the other two layers.
+
+Mechanism: reads the currently configured camera's physical USB bus path and
+V4L2 function index from sysfs (this hardware exposes two V4L2 nodes at the
+*same* bus path, one real capture node and one paired UVC metadata node, so
+bus path alone doesn't disambiguate them, the function index does, confirmed
+against this machine's actual `lsusb -t` topology). Writes a udev rule
+creating a stable `/dev/face-auth-ir` symlink only for a device at that exact
+port+index, and records the same identity in `face-auth.toml`
+(`pinned_camera_path`, `pinned_camera_index`). The actual enforcement point is
+`FaceAuthConfig::verify_pinned_camera()`, which re-derives the identity from
+sysfs directly on every authenticate/enroll call (no `udevadm` dependency,
+since this runs from a PAM-invoked process without a guaranteed `PATH`) and
+refuses to proceed on any mismatch, independent of whether the udev rule
+itself stays correct.
+
+Deliberately opt-in, not wired into `deploy.sh`'s automatic flow: `deploy.sh`
+reruns on every rebuild, so auto-pinning there would silently re-trust
+whatever's plugged in on each redeploy, and at first-install time the
+configured device path isn't yet verified correct (name-based auto-detection
+fails on this hardware, see [../face-unlock-authface/README.md](README.md)
+and the AuthFace HANDOFF notes, generic `Integrated_Webcam_FHD` name on every
+node). Enrollment success is real evidence the device is correct, so
+`deploy.sh` and a first `face-enroll` now print a reminder pointing at
+`pin-camera.sh` instead of running it silently.
+
+Also fixed in this same change: a latent TOML-append bug the script's own
+testing surfaced. Appending a new key with `>>` onto a config file whose last
+line starts with `#` and has no trailing newline silently absorbs the new key
+into that comment (TOML has no delimiter requirement between a same-line
+comment and what follows), instead of erroring. Hit in practice on this
+machine, `pin-camera.sh` reported success while silently leaving the pin
+inactive. Fixed at the root by adding a trailing newline to the config
+template both `pin-camera.sh` and `deploy.sh` build on, plus in
+`deploy.sh`'s own pre-existing analogous `backend=` append.
 
 ## What's still open
 
