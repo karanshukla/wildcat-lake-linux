@@ -54,8 +54,12 @@ Remaining genuine driver-maturity notes:
   models. LLM inference at 7B scale is outperformed by a discrete GPU
   regardless.
 - No polished, packaged solution yet exists for Wayland-compatible KDE voice
-  typing using the Intel NPU (candidates: `whisper-npu-server`, OpenVINO
-  GenAI's `WhisperPipeline`) — noted as a want, not attempted.
+  typing using the Intel NPU. Design done, scaffolded, not functional yet —
+  [input/f5-voice-typing.md](input/f5-voice-typing.md),
+  code at [karanshukla/vinoWhisper](https://github.com/karanshukla/vinoWhisper).
+  Worth noting: the "actively maintained" `whisper-npu-server` fork pointer
+  404s (repo doesn't exist), so this'll need to be built mostly from scratch
+  rather than copied.
 - Want: NPU-powered real-time mic noise suppression, replacing CPU-based
   options (NoiseTorch/RNNoise, DeepFilterNet's default CPU backend). Intel
   already provides the pieces, just not glued together for this: DeepFilterNet2/3
