@@ -50,6 +50,7 @@ display/                  PSR/DSB display bug and fix; VRR not engaging
 camera/                    kamoso raw-format 5fps issue
 audio/                     CS42L43 speaker EQ fix, mic gain fix, LMMS crackle/MIDI setup
 input/                     keyd remap, touchpad scroll fix, keyd/DWT interaction
+desktop/                   raw KDE panel/widget config snapshot (restore point, not a write-up)
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend (superseded by AuthFace)
 face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, screen-spoof physics finding
 disk-encryption/           TPM2 LUKS auto-unlock
