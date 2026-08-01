@@ -13,8 +13,22 @@ files, kept here as a restore point rather than a write-up.
   length mode, visibility per panel.
 
 Both live in `~/.config/` normally. Plasma rewrites them on the fly as panels
-or widgets change, so this is a point-in-time snapshot (last updated
-2026-08-01), not something kept continuously in sync.
+or widgets change, so this is a point-in-time snapshot, kept in sync by an
+automated weekly job rather than manual updates.
+
+### Automation
+
+A systemd `--user` timer (`kde-panel-backup.timer`, Sundays 09:00) runs
+`~/.local/bin/backup-kde-panel-config.sh`, which copies the two files from
+`~/.config/`, and commits + pushes to this repo only if they changed. Chose a
+systemd user timer over crond because the push goes through `gh auth
+git-credential` against the desktop keyring — that's only reliably unlocked
+inside an active login session, which crond jobs run outside of but systemd
+`--user` units don't.
+
+Units live in `~/.config/systemd/user/kde-panel-backup.{service,timer}` (not
+checked in — machine-local state, not something this repo tracks). Check
+status with `systemctl --user list-timers kde-panel-backup.timer`.
 
 ### Restoring
 
