@@ -152,8 +152,16 @@ DialogWidth=810
 [Containments][104][Applets][128][Configuration][General]
 favoritesPortedToKAstats=true
 
+[Containments][104][Applets][150]
+immutability=1
+plugin=org.kde.plasma.marginsseparator
+
+[Containments][104][Applets][150][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
 [Containments][104][General]
-AppletOrder=128;125;124;105
+AppletOrder=128;125;124;105;150
 
 [Containments][145]
 activityId=
@@ -169,15 +177,27 @@ immutability=1
 plugin=org.kde.plasma.digitalclock
 
 [Containments][145][Applets][148][Configuration]
-popupHeight=400
+popupHeight=451
 popupWidth=560
 
 [Containments][145][Applets][149]
 immutability=1
 plugin=org.kde.plasma.icontasks
 
+[Containments][145][Applets][151]
+immutability=1
+plugin=org.kde.plasma.mediacontroller
+
+[Containments][145][Applets][151][Configuration]
+popupHeight=361
+popupWidth=360
+
+[Containments][145][Applets][152]
+immutability=1
+plugin=org.kde.plasma.marginsseparator
+
 [Containments][145][General]
-AppletOrder=149;148
+AppletOrder=149;151;148;152
 
 [ScreenMapping]
 itemsOnDisabledScreens=
