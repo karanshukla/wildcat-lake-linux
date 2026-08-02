@@ -38,6 +38,45 @@ Three pieces of work on top of it:
    pinning, which closes a *different* threat (frame injection from a
    substituted USB device) that the other two layers don't address at all.
    Printed-photo resistance remains untested and open.
+3. **[kwallet-not-auto-unlocking.md](kwallet-not-auto-unlocking.md)** —
+   (2026-08-02) KWallet doesn't auto-unlock via face-auth login/unlock: the
+   `kde-fingerprint` PAM stack has no `pam_kwallet5` hook, and password-derived
+   wallet keys are structurally incompatible with biometric-only auth anyway.
+   Unresolved — root cause isolated, fix not yet applied, pending a cheaper
+   test before considering a PAM change.
+
+## Upstream fork activity (2026-07-31 to 2026-08-02)
+
+Not this repo's work directly, but real changes on
+[karanshukla/vinoAuthFace](https://github.com/karanshukla/vinoAuthFace) `main`
+since the 2026-07-30 migration, worth tracking here since this machine runs
+that fork:
+
+- **Camera pixel-format auto-detection.** `Camera::open` previously assumed
+  every captured byte was 8-bit GREY; it now reads the driver-reported pixel
+  format and handles GREY/YUYV/Y16 correctly, failing fast on anything else.
+  Shipped alongside `face-camera-diag`, an offline tool that lists V4L2 nodes
+  with driver/card/VID:PID/pixel format and can dump a sample frame as a PGM.
+- **Binary distribution.** CI now publishes static musl binaries
+  (CPU/tract backend only, no NPU) to GitHub Releases on tag push.
+  `deploy.sh` falls back to a checksum-verified download of these when
+  `cargo` isn't available, instead of just giving up.
+- **CI added**, running workspace tests and the full `deploy.sh`/
+  `uninstall.sh` matrix (source build, reused local binaries, checksum
+  download) on every push/PR. Caught and fixed an OpenVINO detection gap in
+  the process: `deploy.sh` only recognized the tarball install method, not
+  system-package (RPM/DEB) installs.
+- **Security fix (2026-08-02):** CVE-2026-55832 (`tract-onnx` path traversal
+  via unsanitized ONNX `external_data` paths) patched by bumping to
+  `tract-onnx` 0.21.17. A Dependabot-authored jump straight to 0.23.4 had
+  been tried and reverted first, it broke the build against a dropped
+  generic parameter this project's inference code depends on; 0.21.17
+  patches the same CVE without leaving the 0.21 line.
+- **License correction (2026-08-02):** the recognition model weights
+  (`w600k_mbf`/`w600k_r50`) are **not** MIT. InsightFace's model zoo license
+  is non-commercial research use only; only InsightFace's library code and
+  the separate detector model are MIT. Matters if this fork or its output is
+  ever redistributed or used commercially.
 
 ## Status
 
@@ -52,6 +91,12 @@ Three pieces of work on top of it:
 | Printed-photo anti-spoof | **Open** — no test material available yet |
 | NPU-accelerated anti-spoof *model* (the originally planned approach) | Not pursued — see [liveness-and-antispoof.md](liveness-and-antispoof.md#why-this-didnt-become-an-npu-anti-spoof-model) for why |
 | Bundled GTK4 settings GUI | Removed from this fork's build (dnf dependency-chain cost); source retained in repo |
+| KWallet auto-unlock via face-auth | **Open** — root cause isolated (password-derived key, no `pam_kwallet5` hook in `kde-fingerprint`), fix not yet applied — see [kwallet-not-auto-unlocking.md](kwallet-not-auto-unlocking.md) |
+| Camera pixel-format auto-detection + `face-camera-diag` tool | Merged to `main` upstream, 2026-07-31 |
+| Binary distribution (prebuilt musl releases, no-toolchain `deploy.sh` install) | Merged to `main` upstream, 2026-07-31 |
+| CI (workspace tests + full `deploy.sh` matrix) | Merged to `main` upstream, 2026-07-31 |
+| CVE-2026-55832 (`tract-onnx` path traversal) | Patched upstream, 2026-08-02 (bumped to `tract-onnx` 0.21.17) |
+| Recognition-model MIT-license claim | Corrected upstream, 2026-08-02 — weights are non-commercial research use only, not MIT |
 
 ## Machine context
 

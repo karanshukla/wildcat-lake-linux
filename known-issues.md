@@ -80,6 +80,25 @@ Remaining genuine driver-maturity notes:
   here until there's time to build it; will get its own doc under `audio/` once
   there's something concrete.
 
+## KWallet doesn't auto-unlock with face-auth login/unlock
+
+Face-auth (AuthFace) satisfies KDE login/lock-screen authentication, but the
+lock-screen PAM service (`kde-fingerprint`) has no `pam_kwallet5` hook at
+all, and more fundamentally `pam_kwallet5` needs a plaintext password to
+derive KWallet's decryption key — a face embedding can't supply that even
+if wired in. Result: KWallet stays locked and apps requesting secrets
+through `xdg-desktop-portal`'s Secret Service bridge each trigger their own
+manual-unlock prompt, easy to mistake for the portal or `sudo`/polkit
+misbehaving (ruled out — polkit logs show nothing anomalous). Exact code
+path for how (or whether) the greeter's password reaches
+`pam_kwallet_init`'s unlock socket wasn't traced to certainty — the
+greeter's own PAM service file (`plasmalogin`) doesn't even exist on this
+system despite login succeeding, so no PAM edit has been made yet pending a
+cheaper test (manually unlock once, see if it holds for the rest of the
+session — `kwalletrc` already has idle/screensaver auto-close both off).
+Full investigation:
+[face-unlock-authface/kwallet-not-auto-unlocking.md](face-unlock-authface/kwallet-not-auto-unlocking.md).
+
 ## Touchpad — tap-to-click misfires while typing (keyd interaction)
 
 Tap-to-click cursor jumps and misfired clicks while typing, on a touchpad with

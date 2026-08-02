@@ -38,6 +38,7 @@ timeline as of writing (2026-07-25).
 | Face unlock | NPU/GPU acceleration for biopass inference | Superseded — moved to [AuthFace](https://github.com/pfalkingham/authFace); fork left as investigation record | [face-unlock-biopass/npu-openvino-backend.md](face-unlock-biopass/npu-openvino-backend.md) |
 | Face unlock | AuthFace NPU inference backend (OpenVINO) | Working, merged to `main` — required hand-patching the NPU driver (Fedora's package is both too old and missing the compiler libs); real detector box-decode/normalization bug also fixed 2026-07-30 | [face-unlock-authface/npu-openvino-backend.md](face-unlock-authface/npu-openvino-backend.md) |
 | Face unlock | AuthFace shipped with no anti-spoofing | Three layers shipped: motion-liveness gate, screen-spoofing confirmed blocked by IR-illuminator physics (not software), and physical-USB camera pinning (frame-injection defense); printed-photo resistance still open | [face-unlock-authface/liveness-and-antispoof.md](face-unlock-authface/liveness-and-antispoof.md) |
+| Face unlock | KWallet doesn't auto-unlock with face-auth login/unlock (password-derived key, biometric auth can't supply one) | Unresolved, root cause isolated, fix not yet applied | [known-issues.md](known-issues.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
 | Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
 
