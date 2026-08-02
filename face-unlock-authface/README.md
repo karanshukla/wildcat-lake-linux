@@ -39,11 +39,16 @@ Three pieces of work on top of it:
    substituted USB device) that the other two layers don't address at all.
    Printed-photo resistance remains untested and open.
 3. **[kwallet-not-auto-unlocking.md](kwallet-not-auto-unlocking.md)** —
-   (2026-08-02) KWallet doesn't auto-unlock via face-auth login/unlock: the
-   `kde-fingerprint` PAM stack has no `pam_kwallet5` hook, and password-derived
-   wallet keys are structurally incompatible with biometric-only auth anyway.
-   Unresolved — root cause isolated, fix not yet applied, pending a cheaper
-   test before considering a PAM change.
+   (2026-08-02, updated) KWallet doesn't auto-unlock after login. Originally
+   attributed to face-auth bypassing `pam_kwallet5` (`kde-fingerprint` PAM
+   stack has no hook for it), but reproduced with face-auth disabled —
+   plain password login through `plasmalogin` still leaves the wallet
+   locked. Root cause: a boot-time race where `pam_kwallet_init`'s
+   credential socket closes (~517ms) before `kwalletd6` is D-Bus-activated
+   (~2s after login), so the login password has nowhere to land. Confirmed
+   as a long-standing, still-open upstream KDE bug (bugs.kde.org #433223,
+   #416461), not local misconfiguration — a candidate local workaround was
+   tried and reverted (see doc). Unresolved, accepted as a known annoyance.
 
 ## Upstream fork activity (2026-07-31 to 2026-08-02)
 
@@ -91,7 +96,7 @@ that fork:
 | Printed-photo anti-spoof | **Open** — no test material available yet |
 | NPU-accelerated anti-spoof *model* (the originally planned approach) | Not pursued — see [liveness-and-antispoof.md](liveness-and-antispoof.md#why-this-didnt-become-an-npu-anti-spoof-model) for why |
 | Bundled GTK4 settings GUI | Removed from this fork's build (dnf dependency-chain cost); source retained in repo |
-| KWallet auto-unlock via face-auth | **Open** — root cause isolated (password-derived key, no `pam_kwallet5` hook in `kde-fingerprint`), fix not yet applied — see [kwallet-not-auto-unlocking.md](kwallet-not-auto-unlocking.md) |
+| KWallet auto-unlock after login | **Open, accepted** — confirmed known upstream KDE bug (`kwalletd` D-Bus-activation race vs. `pam_kwallet_init`'s credential socket), reproduces even with face-auth disabled, no local fix pursued — see [kwallet-not-auto-unlocking.md](kwallet-not-auto-unlocking.md) |
 | Camera pixel-format auto-detection + `face-camera-diag` tool | Merged to `main` upstream, 2026-07-31 |
 | Binary distribution (prebuilt musl releases, no-toolchain `deploy.sh` install) | Merged to `main` upstream, 2026-07-31 |
 | CI (workspace tests + full `deploy.sh` matrix) | Merged to `main` upstream, 2026-07-31 |

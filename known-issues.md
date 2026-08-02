@@ -80,23 +80,27 @@ Remaining genuine driver-maturity notes:
   here until there's time to build it; will get its own doc under `audio/` once
   there's something concrete.
 
-## KWallet doesn't auto-unlock with face-auth login/unlock
+## KWallet doesn't auto-unlock after login
 
-Face-auth (AuthFace) satisfies KDE login/lock-screen authentication, but the
-lock-screen PAM service (`kde-fingerprint`) has no `pam_kwallet5` hook at
-all, and more fundamentally `pam_kwallet5` needs a plaintext password to
-derive KWallet's decryption key — a face embedding can't supply that even
-if wired in. Result: KWallet stays locked and apps requesting secrets
-through `xdg-desktop-portal`'s Secret Service bridge each trigger their own
-manual-unlock prompt, easy to mistake for the portal or `sudo`/polkit
-misbehaving (ruled out — polkit logs show nothing anomalous). Exact code
-path for how (or whether) the greeter's password reaches
-`pam_kwallet_init`'s unlock socket wasn't traced to certainty — the
-greeter's own PAM service file (`plasmalogin`) doesn't even exist on this
-system despite login succeeding, so no PAM edit has been made yet pending a
-cheaper test (manually unlock once, see if it holds for the rest of the
-session — `kwalletrc` already has idle/screensaver auto-close both off).
-Full investigation:
+Originally suspected as a face-auth gap (AuthFace's `kde-fingerprint` PAM
+stack has no `pam_kwallet5` hook, and a face embedding can't supply the
+plaintext password `pam_kwallet5` needs anyway) — but reproduced 2026-08-02
+with face-auth disabled, on a plain password login through the greeter's
+`plasmalogin` PAM service, which does correctly run `pam_kwallet5` (it's
+wired in via Fedora's vendor `/usr/lib/pam.d/plasmalogin`, not
+`/etc/pam.d/plasmalogin` which doesn't exist — the earlier "no PAM template"
+finding only checked the latter). Result either way: KWallet stays locked
+and apps requesting secrets through `xdg-desktop-portal`'s Secret Service
+bridge each trigger their own manual-unlock prompt, easy to mistake for the
+portal or `sudo`/polkit misbehaving (ruled out — polkit logs show nothing
+anomalous). Root cause: `pam_kwallet_init`'s credential-handoff socket
+exits (~517ms after login) before `kwalletd6` is D-Bus-activated (~2s after
+login, on first real Secret Service call) — a timing race, not a PAM
+wiring or biometric-auth gap. Confirmed as a long-standing, still-open
+upstream KDE bug (bugs.kde.org #433223, #416461), not local
+misconfiguration — a candidate local workaround (forcing early
+`org.freedesktop.secrets` activation) was tried and reverted, see the doc.
+Accepted as a known annoyance; no local fix pursued. Full investigation:
 [face-unlock-authface/kwallet-not-auto-unlocking.md](face-unlock-authface/kwallet-not-auto-unlocking.md).
 
 ## Touchpad — tap-to-click misfires while typing (keyd interaction)

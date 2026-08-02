@@ -1,8 +1,14 @@
 # KWallet doesn't auto-unlock with face-auth login/unlock
 
-**Status (2026-08-02): unresolved, root cause isolated, fix not yet applied.**
-Pending a cheap empirical test before deciding whether a PAM change is even
-necessary — see "Next step" below.
+**Status (2026-08-02, updated): unresolved, accepted as a known upstream
+KDE bug, no local fix pursued.** Original root cause theory (face-auth
+bypasses `pam_kwallet5`) falsified — reproduced with face-auth disabled.
+Root cause is a boot-time race between `pam_kwallet_init`'s ephemeral
+credential socket and `kwalletd`'s lazy D-Bus-activated startup, confirmed
+as a long-standing, still-open KDE bug (bugs.kde.org #433223, #416461,
+recurring into Plasma 6.18) rather than a local misconfiguration. One
+candidate local workaround was tried and reverted — see "2026-08-02 update"
+below.
 
 ## Symptom
 
@@ -124,14 +130,127 @@ Option 1 is preferred if the cheap test fails, but needs the
 `plasmalogin`/`pam_kwallet_init` handshake traced to certainty first —
 don't touch `system-auth` blind.
 
+## 2026-08-02 update: reproduced with face-auth disabled
+
+The prompt recurred at 13:24–13:26 in a session where face-auth was
+explicitly disabled beforehand — greeter login this boot went through plain
+`pam_unix` password auth via the `plasmalogin` PAM service, not
+fingerprint/face. This falsifies the original theory that biometric login
+bypassing `pam_kwallet5` was the (sole) root cause: the wallet failed to
+auto-unlock even on a pure password login where `pam_kwallet5` ran the full
+auth/setcred/session stack.
+
+**Correction to prior "open uncertainty":** the previous investigation
+concluded no PAM service or template wired in `pam_kwallet5` for the greeter,
+based on `/etc/pam.d/plasmalogin` not existing. That check missed Fedora's
+vendor PAM directory — `/usr/lib/pam.d/plasmalogin` (shipped by
+`plasma-login-manager-6.7.3-4.fc44`) does exist and does include it:
+
+```
+-auth        optional      pam_kwallet5.so
+...
+-session     optional      pam_kwallet5.so auto_start
+```
+
+Journal confirms it actually ran this boot:
+
+```
+13:15:14 plasmalogin-helper[1551]: pam_kwallet5(plasmalogin:auth): pam_sm_authenticate
+13:15:14 plasmalogin-helper[1551]: pam_kwallet5(plasmalogin:setcred): pam_sm_setcred
+13:15:15 plasmalogin-helper[1551]: pam_kwallet5(plasmalogin:session): pam_sm_open_session
+13:15:15 plasmalogin-helper[1595]: pam_kwallet5: final socket path: /run/user/1000/kwallet5.socket
+13:15:16 systemd[1559]: Started plasma-kwallet-pam.service - Unlock kwallet from pam credentials.
+```
+`audit[1551]` for this session shows `grantors=...,pam_unix,pam_kwallet5,...`
+for `exe=plasmalogin-helper` — full password-based PAM wiring, working as
+designed.
+
+**New evidence — timing race:** `plasma-kwallet-pam.service` (which execs
+`pam_kwallet_init`, the `socat`-based credential-socket server) started and
+*exited* in 517ms:
+
+```
+Aug 02 13:15:16 systemd[1559]: Started plasma-kwallet-pam.service
+Aug 02 13:15:16 pam_kwallet_init[2051]: socat[2051] W address is opened in read-write mode but only supports read-only
+    Active: inactive (dead) since Sun 2026-08-02 13:15:16 EDT
+    Duration: 517ms
+```
+
+But `kwalletd6` itself wasn't started until **13:15:18** — 2+ seconds later,
+via D-Bus activation on the first real Secret Service/KWallet call, not
+eagerly at login:
+
+```
+13:15:18 systemd[1559]: Started dbus-:1.1-org.kde.kwalletd6@0.service.
+```
+(confirmed via `ps -o lstart` on the live `kwalletd6` PID: started
+`13:15:18`)
+
+So `pam_kwallet_init`'s listener was already gone by the time `kwalletd6`
+came up to read the handed-off password — a ~1.5s gap where nothing was
+listening on `/run/user/1000/kwallet5.socket` for `kwalletd6` to connect to.
+`kwalletd6` starts locked, with no memory of the login password, and the
+manual prompt (this issue) is the result. The `socat ... read-write ...
+read-only` warning is a red herring — it appears on every single boot in the
+journal history checked (2026-07-25 through today), including boots that
+presumably didn't reprompt, so it's not diagnostic on its own.
+
+Confirmed live during this investigation (13:26, ~11 min after login):
+`org.kde.KWallet.isOpen kdewallet` over D-Bus returned `false`.
+
+**Confirmed known upstream issue, not local misconfiguration:** this exact
+race (`kwalletd` D-Bus-activated on demand, activated too late to receive
+the PAM-captured password) is a long-standing, still-unresolved KDE bug
+across multiple Plasma major versions — [bugs.kde.org #433223](https://bugs.kde.org/show_bug.cgi?id=433223)
+("KWallet doesn't unlock automatically when user logs in"),
+[#416461](https://bugs.kde.org/show_bug.cgi?id=416461) (same, on 5.18), and
+still surfacing as of Plasma 6.18
+([NixOS#446596](https://github.com/NixOS/nixpkgs/issues/446596)).
+
+**Ruled out: `org.freedesktop.secrets` D-Bus service file.** A commonly
+suggested workaround (add
+`~/.local/share/dbus-1/services/org.freedesktop.secrets.service` pointing
+at `kwalletd6`, to force earlier activation) was tried and reverted on
+2026-08-02. Checked via `busctl --user list` first: on this system
+(`kf6-kwallet-6.28.0-1.fc44`) `org.freedesktop.secrets` is owned by
+**`ksecretd`**, a separate process from `kwalletd6` — `kwalletd6` only owns
+`org.kde.kwalletd`/`kwalletd5`/`kwalletd6`. Pointing that busname's service
+file at `kwalletd6` would misfire if it were ever activated on-demand (spawns
+a process that doesn't implement the requested interface, request times out
+instead of failing over to the real backend) — a new failure mode, not a
+fix. More fundamentally it doesn't touch the actual bug anyway:
+`org.kde.kwalletd6.service` already exists and already works (it's what
+activated `kwalletd6` at 13:15:18 in the logged boot); the problem was never
+missing activation plumbing, it's that the already-working activation fires
+after `pam_kwallet_init`'s credential window has closed. A service file for
+an unrelated busname can't change that timing. Removed the file; confirmed
+`org.freedesktop.secrets` ownership (PID) was unaffected before/after.
+
+**Next step:** given this is confirmed as upstream's unresolved race rather
+than something wrong in this system's config, not chasing a local fix
+further — the fix has to land in `kwallet-pam`/`plasma-workspace` itself.
+Treating this as accepted: type the password once per boot when it prompts,
+`kwalletrc`'s idle/screensaver auto-close being off means it should hold for
+the rest of the session. Revisit only if upstream ships a fix, or if it
+starts reprompting *within* a session rather than once per boot.
+
 ## For a bug report
 
-This isn't clearly a distro/KDE bug so much as a structural interaction:
-KWallet's password-derived unlock is fundamentally incompatible with
-biometric-only login, and Fedora ships no `authselect` feature or PAM
-template to bridge password-based KWallet unlock onto a
-fingerprint/face-first auth stack. Worth raising with KDE (`kwallet-pam`)
-as a feature request — auto-unlock KWallet via a secondary factor (e.g.,
-release a stored key after a successful biometric auth, similar in shape
-to how TPM2-sealed LUKS auto-unlock works) rather than requiring the raw
-account password specifically.
+Already reported upstream, no action needed from this end beyond linking
+evidence if asked: [bugs.kde.org #433223](https://bugs.kde.org/show_bug.cgi?id=433223)
+and [#416461](https://bugs.kde.org/show_bug.cgi?id=416461) describe the same
+race (`kwalletd` D-Bus-activated on demand, too late to receive the
+PAM-captured password), and it's still recurring in Plasma 6.18
+([NixOS#446596](https://github.com/NixOS/nixpkgs/issues/446596)). This
+machine's logs are a clean confirming data point if a maintainer wants
+fresh evidence: `/usr/lib/pam.d/plasmalogin` correctly wires in
+`pam_kwallet5.so auto_start`, the full auth/setcred/session stack ran this
+boot via plain `pam_unix` (no biometric auth involved), and
+`pam_kwallet_init`'s `socat`-based credential listener exited (~517ms) a
+full 1.5s+ before `kwalletd6` was D-Bus-activated (~2s after login, on first
+real Secret Service call) — a clean window where the handed-off password
+had nowhere to land. The original biometric-incompatibility angle
+(`kde-fingerprint` PAM stack has no `pam_kwallet5` hook, and a face
+embedding isn't a password `pam_kwallet5` could use anyway) is still true
+and could still be its own feature request, but it is not what's causing
+this specific recurring prompt — see the 2026-08-02 update above.
