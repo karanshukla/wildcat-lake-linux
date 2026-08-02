@@ -1,13 +1,21 @@
-# bash completion for claude (subcommands only; claude has no `completion`
-# generator and ships no completion script, and its flag surface is too
-# large/volatile to hand-maintain — ble.sh autosuggest covers flags from
-# history instead)
+# bash completion for claude (subcommands + top-level flags; claude has no
+# `completion` generator and ships no completion script. Flag list is
+# scraped from `claude --help` (as of the version at time of writing) and
+# will go stale on updates until re-scraped — no value-completion per flag,
+# just the flag names)
 
 _claude() {
     local cur prev words cword
     _init_completion || return
 
     local subcommands="agents auth auto-mode doctor gateway install mcp plugin plugins project setup-token ultrareview update upgrade"
+
+    local flags="--add-dir --agent --agents --allow-dangerously-skip-permissions --allowed-tools --allowedTools --append-system-prompt --ax-screen-reader --background --bare --betas --bg --brief --chrome --continue --dangerously-skip-permissions --debug --debug-file --disable-slash-commands --disallowed-tools --disallowedTools --effort --exclude-dynamic-system-prompt-sections --fallback-model --file --fork-session --forward-subagent-text --from-pr --help --ide --include-hook-events --include-partial-messages --input-format --json-schema --max-budget-usd --mcp-config --model --name --no-chrome --no-session-persistence --output-format --permission-mode --plugin-dir --plugin-url --print --prompt-suggestions --remote-control --remote-control-session-name-prefix --replay-user-messages --resume --safe-mode --session-id --settings --setting-sources --strict-mcp-config --system-prompt --tmux --tools --verbose --version --worktree -c -d -h -n -p -r -v -w"
+
+    if [[ $cur == -* ]]; then
+        COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+        return
+    fi
 
     # only offer subcommands as the first non-option arg; otherwise fall
     # back to file completion (claude takes free-text prompts/paths)
@@ -19,7 +27,7 @@ _claude() {
         esac
     done
 
-    if [[ -z $sub && $cur != -* ]]; then
+    if [[ -z $sub ]]; then
         COMPREPLY=($(compgen -W "$subcommands" -- "$cur"))
         compopt -o default 2>/dev/null
         return

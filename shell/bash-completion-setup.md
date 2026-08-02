@@ -88,12 +88,15 @@ just needed capturing and saving):
   `doctor`, `uninstall`) with their actual per-subcommand flags (scraped
   from each `gaze <subcommand> --help`), plus dynamic `-u`/`--user`
   completion against system usernames (`compgen -u`).
-- `claude` — subcommand names only (`agents`, `auth`, `auto-mode`, `doctor`,
+- `claude` — subcommand names (`agents`, `auth`, `auto-mode`, `doctor`,
   `gateway`, `install`, `mcp`, `plugin`, `plugins`, `project`,
-  `setup-token`, `ultrareview`, `update`, `upgrade`). Deliberately doesn't
-  attempt full flag completion — `claude`'s flag surface is large and
-  changes across releases, not worth hand-maintaining; falls back to file
-  completion for everything else.
+  `setup-token`, `ultrareview`, `update`, `upgrade`), plus flag names
+  scraped from `claude --help` (61 long flags + 8 short). Flag names only —
+  no value completion (e.g. `--model` won't suggest `sonnet`/`opus`), and
+  since there's no `claude completion` generator to regenerate from, this
+  list will silently go stale whenever flags are added/renamed upstream and
+  needs re-scraping by hand. Falls back to file completion for positional
+  args (prompts/paths).
 
 All installed under `~/.local/share/bash-completion/completions/` (the XDG
 user completions dir) — Fedora's `bash-completion` package scans this
