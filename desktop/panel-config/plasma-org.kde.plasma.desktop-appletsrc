@@ -118,24 +118,16 @@ DialogHeight=630
 DialogWidth=810
 
 [Containments][104][Applets][105][General]
-extraItems=org.kde.kdeconnect,org.kde.plasma.vault,org.kde.plasma.battery,org.kde.plasma.brightness,org.kde.plasma.cameraindicator,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.manage-inputmethod,org.kde.plasma.mediacontroller,org.kde.plasma.notifications,org.kde.plasma.networkmanagement,org.kde.plasma.keyboardlayout,org.kde.plasma.printmanager,org.kde.plasma.keyboardindicator,org.kde.plasma.weather,org.kde.plasma.bluetooth,org.kde.kscreen,org.kde.plasma.volume
+extraItems=org.kde.kdeconnect,org.kde.plasma.vault,org.kde.plasma.battery,org.kde.plasma.brightness,org.kde.plasma.cameraindicator,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.manage-inputmethod,org.kde.plasma.notifications,org.kde.plasma.networkmanagement,org.kde.plasma.keyboardlayout,org.kde.plasma.printmanager,org.kde.plasma.keyboardindicator,org.kde.plasma.weather,org.kde.plasma.bluetooth,org.kde.kscreen,org.kde.plasma.volume
 knownItems=org.kde.kdeconnect,org.kde.plasma.vault,org.kde.plasma.battery,org.kde.plasma.brightness,org.kde.plasma.cameraindicator,org.kde.plasma.clipboard,org.kde.plasma.devicenotifier,org.kde.plasma.manage-inputmethod,org.kde.plasma.mediacontroller,org.kde.plasma.notifications,org.kde.plasma.networkmanagement,org.kde.plasma.keyboardlayout,org.kde.plasma.printmanager,org.kde.plasma.keyboardindicator,org.kde.plasma.weather,org.kde.plasma.bluetooth,org.kde.kscreen,org.kde.plasma.volume
-
-[Containments][104][Applets][124]
-immutability=1
-plugin=org.kde.plasma.clipboard
-
-[Containments][104][Applets][124][Configuration]
-popupHeight=433
-popupWidth=432
 
 [Containments][104][Applets][125]
 immutability=1
 plugin=org.kde.plasma.windowlist
 
 [Containments][104][Applets][125][Configuration]
-popupHeight=400
-popupWidth=560
+popupHeight=65
+popupWidth=612
 
 [Containments][104][Applets][128]
 immutability=1
@@ -160,8 +152,16 @@ plugin=org.kde.plasma.marginsseparator
 DialogHeight=630
 DialogWidth=810
 
+[Containments][104][Applets][151]
+immutability=1
+plugin=org.kde.plasma.mediacontroller
+
+[Containments][104][Applets][151][Configuration]
+popupHeight=361
+popupWidth=360
+
 [Containments][104][General]
-AppletOrder=128;125;124;105;150
+AppletOrder=128;125;151;105;150
 
 [Containments][145]
 activityId=
@@ -180,24 +180,28 @@ plugin=org.kde.plasma.digitalclock
 popupHeight=451
 popupWidth=560
 
+[Containments][145][Applets][148][Configuration][ConfigDialog]
+DialogHeight=630
+DialogWidth=810
+
 [Containments][145][Applets][149]
 immutability=1
 plugin=org.kde.plasma.icontasks
-
-[Containments][145][Applets][151]
-immutability=1
-plugin=org.kde.plasma.mediacontroller
-
-[Containments][145][Applets][151][Configuration]
-popupHeight=361
-popupWidth=360
 
 [Containments][145][Applets][152]
 immutability=1
 plugin=org.kde.plasma.marginsseparator
 
+[Containments][145][Applets][154]
+immutability=1
+plugin=org.kde.kdeconnect
+
+[Containments][145][Applets][154][Configuration]
+popupHeight=400
+popupWidth=560
+
 [Containments][145][General]
-AppletOrder=149;151;148;152
+AppletOrder=149;154;148;152
 
 [ScreenMapping]
 itemsOnDisabledScreens=
