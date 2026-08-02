@@ -1,0 +1,30 @@
+# bash completion for claude (subcommands only; claude has no `completion`
+# generator and ships no completion script, and its flag surface is too
+# large/volatile to hand-maintain — ble.sh autosuggest covers flags from
+# history instead)
+
+_claude() {
+    local cur prev words cword
+    _init_completion || return
+
+    local subcommands="agents auth auto-mode doctor gateway install mcp plugin plugins project setup-token ultrareview update upgrade"
+
+    # only offer subcommands as the first non-option arg; otherwise fall
+    # back to file completion (claude takes free-text prompts/paths)
+    local i sub=""
+    for ((i = 1; i < cword; i++)); do
+        case "${words[i]}" in
+            -*) ;;
+            *) sub="${words[i]}"; break ;;
+        esac
+    done
+
+    if [[ -z $sub && $cur != -* ]]; then
+        COMPREPLY=($(compgen -W "$subcommands" -- "$cur"))
+        compopt -o default 2>/dev/null
+        return
+    fi
+
+    _filedir
+}
+complete -F _claude claude

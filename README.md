@@ -41,6 +41,7 @@ timeline as of writing (2026-07-25).
 | Face unlock | KWallet doesn't auto-unlock after login (reproduced with face-auth disabled too) | Unresolved, accepted — confirmed known upstream KDE bug (kwalletd D-Bus-activation race vs. PAM credential handoff, not biometric auth or local config), no local fix pursued | [face-unlock-authface/kwallet-not-auto-unlocking.md](face-unlock-authface/kwallet-not-auto-unlocking.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
 | Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
+| Shell | No tab-completion in Ghostty for unpackaged CLI tools (e.g. `gaze`) | Worked around (stock `bash-completion` + custom scripts); predictive ghost-text (`ble.sh`) tried, reverted — unstable with raw-mode TUI apps | [shell/bash-completion-setup.md](shell/bash-completion-setup.md) |
 
 See [known-issues.md](known-issues.md) for everything still open.
 
@@ -57,6 +58,7 @@ face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, scr
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
                            S0ix substates never entered
+shell/                     bash-completion setup for gaze/claude/bat; ble.sh tried & reverted
 known-issues.md            everything still open/unresolved
 ```
 

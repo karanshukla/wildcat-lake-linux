@@ -1,0 +1,55 @@
+# bash completion for gaze (hand-written; gaze ships no completion script,
+# and gaze itself is not distro-packaged, so there's nothing to source from)
+
+_gaze() {
+    local cur prev words cword
+    _init_completion || return
+
+    local subcommands="auth add-face refine-face list-faces remove-face rename-face clear-user config doctor uninstall help"
+
+    # flags per subcommand
+    local -A sub_opts=(
+        [auth]="-u --user -v --verbose -s --silent -h --help"
+        [add-face]="-u --user -h --help"
+        [refine-face]="-u --user -h --help"
+        [list-faces]="-u --user -h --help"
+        [remove-face]="-u --user -h --help"
+        [rename-face]="-u --user -h --help"
+        [clear-user]="-u --user -h --help"
+        [config]="--show -h --help"
+        [doctor]="-u --user -b --benchmark -h --help"
+        [uninstall]="-y --yes --keep-data --dry-run -h --help"
+    )
+
+    # find the subcommand already on the line (first non-option word after `gaze`)
+    local sub=""
+    local i
+    for ((i = 1; i < cword; i++)); do
+        case "${words[i]}" in
+            -*) ;;
+            *) sub="${words[i]}"; break ;;
+        esac
+    done
+
+    if [[ -z $sub ]]; then
+        COMPREPLY=($(compgen -W "$subcommands" -- "$cur"))
+        return
+    fi
+
+    case "$prev" in
+        -u|--user)
+            COMPREPLY=($(compgen -u -- "$cur"))
+            return
+            ;;
+    esac
+
+    if [[ $cur == -* ]]; then
+        COMPREPLY=($(compgen -W "${sub_opts[$sub]:--h --help}" -- "$cur"))
+        return
+    fi
+
+    # positional FACE/FROM/TO args: no fixed values to offer (would need a
+    # live daemon call to list enrolled faces), so fall back to nothing
+    COMPREPLY=()
+}
+complete -F _gaze gaze
