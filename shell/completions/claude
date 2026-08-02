@@ -1,8 +1,9 @@
-# bash completion for claude (subcommands + top-level flags; claude has no
-# `completion` generator and ships no completion script. Flag list is
-# scraped from `claude --help` (as of the version at time of writing) and
-# will go stale on updates until re-scraped — no value-completion per flag,
-# just the flag names)
+# bash completion for claude (subcommands + flags). Flags are delegated to
+# bash-completion's own generic `_comp_complete_longopt`, which parses
+# `claude --help` live at completion time -- no hand-scraped list, never
+# goes stale. Only handles long (--xxx) options, not the short forms
+# (-c -d -h -n -p -r -v -w); subcommand names are hand-listed since claude
+# ships no `completion` generator and this repo has no other source for them.
 
 _claude() {
     local cur prev words cword
@@ -10,10 +11,8 @@ _claude() {
 
     local subcommands="agents auth auto-mode doctor gateway install mcp plugin plugins project setup-token ultrareview update upgrade"
 
-    local flags="--add-dir --agent --agents --allow-dangerously-skip-permissions --allowed-tools --allowedTools --append-system-prompt --ax-screen-reader --background --bare --betas --bg --brief --chrome --continue --dangerously-skip-permissions --debug --debug-file --disable-slash-commands --disallowed-tools --disallowedTools --effort --exclude-dynamic-system-prompt-sections --fallback-model --file --fork-session --forward-subagent-text --from-pr --help --ide --include-hook-events --include-partial-messages --input-format --json-schema --max-budget-usd --mcp-config --model --name --no-chrome --no-session-persistence --output-format --permission-mode --plugin-dir --plugin-url --print --prompt-suggestions --remote-control --remote-control-session-name-prefix --replay-user-messages --resume --safe-mode --session-id --settings --setting-sources --strict-mcp-config --system-prompt --tmux --tools --verbose --version --worktree -c -d -h -n -p -r -v -w"
-
     if [[ $cur == -* ]]; then
-        COMPREPLY=($(compgen -W "$flags" -- "$cur"))
+        _comp_complete_longopt claude
         return
     fi
 

@@ -90,13 +90,36 @@ just needed capturing and saving):
   completion against system usernames (`compgen -u`).
 - `claude` — subcommand names (`agents`, `auth`, `auto-mode`, `doctor`,
   `gateway`, `install`, `mcp`, `plugin`, `plugins`, `project`,
-  `setup-token`, `ultrareview`, `update`, `upgrade`), plus flag names
-  scraped from `claude --help` (61 long flags + 8 short). Flag names only —
-  no value completion (e.g. `--model` won't suggest `sonnet`/`opus`), and
-  since there's no `claude completion` generator to regenerate from, this
-  list will silently go stale whenever flags are added/renamed upstream and
-  needs re-scraping by hand. Falls back to file completion for positional
-  args (prompts/paths).
+  `setup-token`, `ultrareview`, `update`, `upgrade`) are hand-listed, but
+  flags are **not** hand-scraped — delegated instead to bash-completion's
+  own generic `_comp_complete_longopt` (see below), so `--res` → `--resume`
+  works and never goes stale. Trade-off: that fallback only parses `--xxx`
+  long options out of live `--help` text, so the short forms (`-c -d -h -n
+  -p -r -v -w`) aren't offered. Falls back to file completion for
+  positional args (prompts/paths).
+
+### bash-completion's built-in generic fallback (`_comp_complete_longopt`)
+
+Worth knowing about on its own: bash-completion ships a completer that
+doesn't need a per-command script at all — it runs `<command> --help` live
+at completion time and regexes out `--xxx` tokens, so it can never go
+stale. Confirmed working directly against both tools here:
+
+- `claude --res<TAB>` → `--resume` (correct, live from `--help`)
+- `gaze --h<TAB>` → `--help` only — gaze's real flags (`--verbose`,
+  `--user`, etc.) live under *subcommands*, and this fallback only ever
+  inspects the top-level `--help`, so it can't see them. `gaze` still needs
+  the hand-written, subcommand-aware script above.
+
+It's **not** wired up as a true default for arbitrary commands, though —
+by default (`complete -D`) any command with no specific completion falls
+back to plain filename completion (`_comp_complete_minimal`).
+`_comp_complete_longopt` is only pre-registered for a curated allowlist of
+~50 core Unix tools (`grep`, `sed`, `ls`, `cat`, etc. — see the
+`complete -F _comp_complete_longopt` line in
+`/usr/share/bash-completion/bash_completion`). Registering it for an
+arbitrary tool is a one-line opt-in, which is what `claude`'s script above
+does explicitly rather than hand-listing flags.
 
 All installed under `~/.local/share/bash-completion/completions/` (the XDG
 user completions dir) — Fedora's `bash-completion` package scans this
