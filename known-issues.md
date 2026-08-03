@@ -105,9 +105,13 @@ Remaining genuine driver-maturity notes:
 - Practical scope for NPU on Linux today: local embeddings, webcam/CV-scale
   models. LLM inference at 7B scale is outperformed by a discrete GPU
   regardless.
-- No polished, packaged solution yet exists for Wayland-compatible KDE voice
-  typing using the Intel NPU. Design done, scaffolded, not functional yet —
-  [input/f5-voice-typing.md](input/f5-voice-typing.md),
+- No polished, packaged solution yet exists for a Wayland-compatible KDE
+  speech feature using the Intel NPU — pivoted 2026-08-03 from toggle-mode
+  voice typing to live captioning. Feasibility spike complete and confirmed
+  working (NPU inference, correct transcription, ~1.19s per 30s window,
+  ~0.2s perceived latency via token streaming); live-captioning
+  implementation itself (continuous capture, overlay display) not built yet
+  — [input/f5-voice-typing.md](input/f5-voice-typing.md),
   code at [karanshukla/vinoWhisper](https://github.com/karanshukla/vinoWhisper).
   Worth noting: the "actively maintained" `whisper-npu-server` fork pointer
   404s (repo doesn't exist), so this'll need to be built mostly from scratch
