@@ -16,6 +16,16 @@ audio louder.
 A PipeWire filter-chain virtual sink EQs the signal before it reaches the real
 `sof-soundwire Speaker` ALSA sink.
 
+**Retuned 2026-08-03:** the original curve's 100Hz low-shelf boosted +7dB to
+fake bass that the CS35L56 woofer amps weren't actually producing yet (see
+[audio/cs35l56-sidecar-amp-quirk.md](cs35l56-sidecar-amp-quirk.md) — at the
+time this EQ was written, only the tweeters were routed). Once the woofers
+were fixed, that boost doubled up with real low end and, since these
+speakers are downward-firing, with surface coupling on a table/lap — result
+was muddy bass. Cut the shelf to +2dB; everything else (200Hz warmth peak,
+treble-correction bands) is unchanged and still needed to correct for the
+zeroed hardware EQ, which is unrelated to the amp-routing fix.
+
 System: PipeWire 1.6.8, WirePlumber 0.5.14 — both support
 `libpipewire-module-filter-chain` natively. Fedora ships a ready
 `filter-chain.service` systemd `--user` unit (disabled by default; enable it) that
@@ -27,8 +37,8 @@ loads `~/.config/pipewire/filter-chain.conf.d/*.conf`.
 context.modules = [
     { name = libpipewire-module-filter-chain
         args = {
-            node.description = "Bass Boost EQ (Speakers)"
-            media.name       = "Bass Boost EQ (Speakers)"
+            node.description = "Speaker EQ"
+            media.name       = "Speaker EQ"
             filter.graph = {
                 nodes = [
                     {
@@ -41,7 +51,7 @@ context.modules = [
                         type    = builtin
                         name    = eq_band_1
                         label   = bq_lowshelf
-                        control = { "Freq" = 100.0  "Q" = 0.9 "Gain" = 7.0 }
+                        control = { "Freq" = 100.0  "Q" = 0.9 "Gain" = 2.0 }
                     }
                     {
                         type    = builtin
@@ -87,7 +97,7 @@ context.modules = [
             audio.position = [ FL FR ]
             capture.props = {
                 node.name    = "effect_input.bass_eq"
-                node.description = "Bass Boost EQ (Speakers)"
+                node.description = "Speaker EQ"
                 media.class  = Audio/Sink
             }
             playback.props = {
@@ -103,7 +113,7 @@ context.modules = [
 | Stage | Type | Freq | Q | Gain | Purpose |
 |---|---|---|---|---|---|
 | preamp | linear | — | — | −3 dB | headroom so the boosts below don't clip |
-| band 1 | low shelf | 100 Hz | 0.9 | +7 dB | restore missing bass |
+| band 1 | low shelf | 100 Hz | 0.9 | +2 dB | mild bass lift (was +7dB before the woofer amps were fixed) |
 | band 2 | peaking | 200 Hz | 1.1 | +4 dB | warmth/body |
 | band 3 | peaking | 3 kHz | 1.5 | −2 dB | tame "tinny" resonance |
 | band 4 | peaking | 6 kHz | 1.2 | −1.5 dB | reduce harshness |
