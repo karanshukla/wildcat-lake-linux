@@ -187,15 +187,43 @@ live — it has to be rebuilt as a kernel module and reloaded. Full mechanism:
 Verified installed and signed: `/lib/modules/7.1.5-201.fc44.x86_64/extra/snd-soc-sof-sdw.ko.xz`,
 correct `vermagic`, `sig_id: PKCS#7` matching the enrolled MOK fingerprint.
 
+## On kernel update
+
+DKMS auto-rebuilds this against every new kernel (Fedora's
+`/usr/lib/kernel/install.d/40-dkms.install` hook runs `dkms autoinstall` on
+every `kernel-core` update, and `AUTOINSTALL="yes"` in `dkms.conf` triggers
+it), auto-signing with the already-enrolled MOK — no manual step normally
+needed. But it's rebuilding a **frozen 7.1.5-vintage copy** of `sof_sdw.c`
+against the new kernel's headers, not fetching the new kernel's actual
+source, so check after every update:
+
+1. **`dkms status`** — confirm `sof-sdw-sidecar-0e53` shows `installed` for
+   the *new* running kernel version, not just the old one.
+   - **If it's missing/failed for the new kernel:** the frozen source didn't
+     build against the new headers (internal API drift). No override module
+     got installed, so the kernel's own stock module loads instead — you're
+     silently back to tweeters-only *unless* that stock module already has
+     an upstream `0E53` quirk by then. Listen for woofers; if silent, this
+     patch needs rebuilding from fresh source (`dnf download --source` for
+     the new kernel version, reapply the same one-entry diff, redo the DKMS
+     package).
+2. **If it built successfully**, listen for woofers anyway — a clean build
+   doesn't guarantee upstream didn't change something else in that file
+   between versions that our frozen copy silently reverts.
+3. **If a Fedora kernel update ever ships the real upstream `0E53` quirk**
+   (watch for the precedent-style commit landing, or just: audio keeps
+   working *and* `dkms status` shows our package built against a kernel that
+   didn't need it), remove this package so it stops shadowing the in-tree
+   fix: `dkms remove -m sof-sdw-sidecar-0e53 -v 1.0 --all`.
+
 ## Trade-offs
 
 - This is a **local bridge, not a permanent solution** — it re-implements a
   single already-upstream mechanism for one additional SKU, following an
-  exact precedent. Once a kernel shipping the equivalent `0E53` quirk (or
-  Fedora backports it) is installed, this DKMS package should be removed to
-  avoid any conflict with the in-tree fix (unlikely in practice — DKMS-built
-  modules only override the *stock* kernel's own module for the *same*
-  kernel version, but cleaner to not carry dead weight).
+  exact precedent, and rebuilds from a frozen copy of the source on every
+  kernel update rather than the new kernel's actual code. See
+  [On kernel update](#on-kernel-update) above for what to check after each
+  `dnf update` and when to retire this package.
 - Requires MOK enrollment. Doesn't weaken Secure Boot for anything else, but
   it *is* a standing trust decision, not something to enroll casually.
 - Not yet verified across a clean cold boot (only tested via live
