@@ -30,6 +30,7 @@ timeline as of writing (2026-07-25).
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
 | Audio | Hot/noisy mic — UCM ships no default capture gain (boots at hardware max) | Fixed (persisted ALSA state) | [audio/cs42l43-mic-gain-fix.md](audio/cs42l43-mic-gain-fix.md) |
 | Audio | LMMS crackles playing note sequences (single notes fine); Akai MPK mini play MIDI setup | Fix applied (buffer bump, PipeWire rate config, RT scheduling grant), verification pending next login | [audio/lmms-crackle-and-midi.md](audio/lmms-crackle-and-midi.md) |
+| Audio | Two of four speakers (CS35L56 woofer amps) never get audio routed — tweeters only | Unresolved, root cause confirmed (ACPI under-reports SmartAmp count, no backend DAI for 2nd amp); needs kernel machine-driver quirk or Dell ACPI fix | [known-issues.md](known-issues.md) |
 | Input | Keyboard remapping (Mac-style Alt-as-Cmd) | Active (keyd) | [input/keyd-mac-remap.md](input/keyd-mac-remap.md) |
 | Input | Plasma 6 Wayland touchpad scroll-speed regression | Worked around | [input/touchpad-scroll-fix.md](input/touchpad-scroll-fix.md) |
 | Input | Claude Desktop quick-entry via Copilot-key remap | Active (keyd) | [input/claude-desktop-quick-entry.md](input/claude-desktop-quick-entry.md) |

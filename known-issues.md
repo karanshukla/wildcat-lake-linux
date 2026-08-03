@@ -16,6 +16,58 @@ isolated yet, confounded by a documented KWin bug (open windows/terminals
 breaking VRR detection). Full investigation:
 [display/vrr-not-engaging.md](display/vrr-not-engaging.md).
 
+## Audio — two of four speakers (CS35L56 woofer amps) never get audio routed
+
+Symptom: only the tweeter path (driven directly by the CS42L43 codec) plays
+anything; the two woofers behind the CS35L56 amp chips are silent. First
+flagged by matching reports from other DellInc.-XPS13DX13260 owners running
+Fedora, then independently reproduced and root-caused on this machine
+(2026-08-03).
+
+Root cause, confirmed via `journalctl -k`: both physical CS35L56 amps probe
+and boot firmware correctly —
+```
+cs35l56 spi-cs35l56-left:  Cirrus Logic CS35L56 Rev B2 OTP1 fw:4.2.1 (patched=0)
+cs35l56 spi-cs35l56-right: Cirrus Logic CS35L56 Rev B2 OTP1 fw:4.2.1 (patched=0)
+```
+but the kernel never wires audio to them:
+```
+sof-audio-pci-intel-ptl: No SoundWire machine driver found for the ACPI-reported configuration:
+sof-audio-pci-intel-ptl: link 2 mfg_id 0x01fa part_id 0x4243 version 0x3
+acpi device:20: SDCA function SmartAmp (type 1) at 0x1
+sof-audio-pci-intel-ptl: loading topology 1: intel/sof-ipc4-tplg/sof-sdca-1amp-id2.tplg
+```
+No SoundWire machine-driver quirk exists yet for this exact link
+configuration (early silicon), so the kernel falls back to a generic
+"function topology" loader that trusts ACPI's reported SDCA function count —
+and Dell's ACPI tables report only **one** SmartAmp function, despite two
+independently-addressable CS35L56 chips being present. Result: `aplay -l`
+exposes a single 2-channel "Speaker" PCM (tweeters only), and no `cs35l56`
+mixer controls exist on the card.
+
+Tested and ruled out as a local/config-level fix: the correct topology does
+ship in the SOF firmware package
+(`/usr/lib/firmware/intel/sof-ipc4-tplg/sof-sdca-2amp-id2.tplg.xz`, alongside
+1amp/3amp/4amp variants), so forced it via the `snd_sof` module's
+`tplg_filename`/`tplg_path` parameters (the param is read-only once loaded —
+required a full unload/reload of the entire SOF/SoundWire module chain). The
+2-amp topology loaded, but the card then failed to build entirely:
+```
+sof-audio-pci-intel-ptl: loading topology: intel/sof-ipc4-tplg/sof-sdca-2amp-id2.tplg
+sof-audio-pci-intel-ptl: error: can't find BE for DAI alh-copier.Playback-SmartAmp.1
+sof_sdw: ASoC: failed to load widget alh-copier.Playback-SmartAmp.1
+```
+Even the matching topology has nowhere to attach the second amp's stream,
+because the machine driver only ever creates one backend DAI — a direct
+consequence of ACPI under-reporting the SmartAmp count. Cleanly reverted
+(unload/reload back to default params); no lasting effect on the system.
+
+No local fix exists. What's actually needed: a kernel machine-driver quirk
+(`snd_soc_sof_sdw`/`snd_sof_intel_hda_generic`) hardcoding a second backend
+DAI for this device (SoundWire link 2, mfg_id 0x01fa, part_id 0x4243,
+version 0x3), or a Dell BIOS/ACPI update correctly reporting 2 SmartAmp
+functions instead of 1.
+
 ## NPU acceleration — inference works, but crashes a real daemon process
 
 Update (2026-07-29): moot for now — face unlock moved from biopass to
