@@ -191,6 +191,30 @@ see if the hang stops recurring; trade-off would be needing a keypress/power-
 button tap to wake the display after closing the lid, since lid-open alone
 would no longer do it.
 
+**Refined mechanism theory: slow lid-open, not just EC/OS race.** A specific
+trigger condition worth calling out: opening the lid *slowly* is a plausible
+way to put the lid's Hall-effect sensor through its hysteresis/dead-zone for an
+extended period instead of a crisp transition — producing a noisy or
+never-fully-resolved signal at the kernel/evdev level, while the EC's own
+`Power on LID open` firmware path (a coarser, independent trigger) fires
+anyway. Supporting evidence: every other lid transition in the crashed boot —
+dozens of opens/closes during the earlier rapid-nudge testing — shows up
+cleanly as `systemd-logind: Lid opened`/`Lid closed`. The one that mattered
+doesn't: there is no `Lid opened` entry anywhere in the journal after the final
+`Lid closed` at 20:44:31, even though the lid was physically opened (that's
+when the blank screen was observed). If this were purely a software/suspend
+deadlock, the raw lid-switch evdev event should still have registered
+regardless of what happened downstream — its total absence points at the
+sensor signal itself never resolving into a clean "open" state at the kernel
+level, consistent with a slow open rather than a fast nudge.
+
+**Decision: leaving `Power on LID open` enabled, untested.** High confidence
+this setting is at least a contributing factor, but the convenience of the
+display just coming back on lid-open (no keypress needed) is worth more than
+closing out this specific lead — accepted as a known, live risk rather than
+traded away. Revisit if the hang starts recurring often enough to outweigh the
+convenience.
+
 ## Mitigations applied (2026-08-03 addition)
 
 **`polkitd` debug logging enabled**, so a repeat occurrence produces the actual
