@@ -172,6 +172,25 @@ judge the session inactive only during this incident isn't established.
 `polkitd` runs at `--log-level=notice` by default, which logs only the verdict,
 not the reasoning — see Mitigations below for the fix to that going forward.
 
+**New candidate lead (2026-08-04): `Power on LID open` BIOS setting.** Checked
+BIOS setup (Advanced tab) and found `Power on LID open: <Enabled>`. This is an
+EC/firmware-level feature — the embedded controller itself asserts a power-on
+signal whenever the lid is physically opened, entirely independent of
+`systemd-logind`/PowerDevil/polkit. That's a real candidate mechanism for this
+incident specifically: most of the lid-close events that night never actually
+suspended (polkit kept denying the request, per above), so the OS believed the
+machine was awake the whole time — but the EC has no visibility into that; it
+fires its own "power on" trigger on every physical lid-open regardless. Racing
+an EC-level wake signal against a system that's already running, on a `xe`
+driver already known to have a fragile panel-power path on this early-silicon
+Panther Lake stepping (see [psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md)),
+is a plausible way to land in the "backlight on, keyboard lit, black screen,
+doesn't even respond to VT switch" state observed. Not tested yet — candidate
+experiment is disabling `Power on LID open` and repeating rapid lid-cycling to
+see if the hang stops recurring; trade-off would be needing a keypress/power-
+button tap to wake the display after closing the lid, since lid-open alone
+would no longer do it.
+
 ## Mitigations applied (2026-08-03 addition)
 
 **`polkitd` debug logging enabled**, so a repeat occurrence produces the actual

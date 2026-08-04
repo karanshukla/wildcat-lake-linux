@@ -111,28 +111,26 @@ Per the upstream kernel patch that implements this
 (["platform/x86:dell-laptop: Add knobs to change battery charge settings"](https://lkml.iu.edu/hypermail/linux/kernel/2408.2/04555.html)),
 these sysfs attributes are backed by two Dell SMBIOS tokens —
 `BAT_CUSTOM_CHARGE_START` (`0x0349`) and `BAT_CUSTOM_CHARGE_END` (`0x034A`) —
-read via `dell_send_request_for_tokenid()`. When a token isn't present in the
-BIOS's SMBIOS token table, that call fails and propagates straight through as
-ENXIO/EIO on the sysfs file — matching exactly what's observed here. Driver
-code is present and correctly wired (the attributes exist, the hook is
-registered); the failure is one layer down, in the SMBIOS call itself.
+read via `dell_send_request_for_tokenid()`. Driver code is present and
+correctly wired (the attributes exist, the battery hook is registered); the
+failure is one layer down, in the SMBIOS call itself.
 
-BIOS is `1.3.0` (2026-06-25) on `XPS 13 DX13260`; `fwupdmgr get-updates`
-reports nothing newer, so this isn't a "flash the latest BIOS" fix. Given this
-machine's track record of BIOS/kernel-side gaps specific to early Wildcat Lake
-silicon (see the [CS35L56 sidecar-amp quirk](audio/cs35l56-sidecar-amp-quirk.md),
-which needed an upstream DMI-quirk fix for this exact SKU), the working theory
-is that Dell hasn't populated the custom-charge SMBIOS tokens for this BIOS
-release yet, rather than a local misconfiguration.
+Confirmed via BIOS Setup (Advanced menu, InsydeH2O) photographed 2026-08-04:
+`Battery Charge Configuration` is a real, present option — currently set to
+the factory-default `ExpressCharge™`, not `Custom`. (Initial theory here was
+that Dell hadn't implemented the custom-charge SMBIOS tokens at all in this
+BIOS build, by analogy with the [CS35L56 sidecar-amp
+quirk](audio/cs35l56-sidecar-amp-quirk.md); that's ruled out — the option
+exists, it's just not selected.) The `BAT_CUSTOM_CHARGE_START/END` tokens are
+almost certainly only live when this mode is `Custom`; on `ExpressCharge™`
+there's nothing for the OS-side threshold calls to act on, which explains the
+ENXIO/EIO exactly. A separate `Advanced Battery Charge Configuration` entry
+(currently `Disabled`) is a different feature (scheduled/conditional
+charging), not required for the basic threshold.
 
-Not yet confirmed: whether BIOS Setup (F2 at boot) even exposes a "Battery
-Charge Configuration → Custom" option — if that setting is entirely absent
-from BIOS Setup, that would confirm the tokens aren't implemented in this BIOS
-build at all. Kernel dynamic-debug tracing would pin down the exact failing
-SMBIOS call, but `/sys/kernel/debug/dynamic_debug/control` is write-blocked
-under Secure Boot lockdown on this machine (consistent with the MOK-signed
-module setup documented in the CS35L56 doc) — that route needs Secure Boot
-temporarily disabled or a boot-time `dyndbg=` kernel param instead.
+Next step: set `Battery Charge Configuration` → `Custom` in BIOS Setup, save,
+reboot, and re-test `charge_control_start/end_threshold` from Linux. Not yet
+verified as of this writing.
 
 ## KWallet doesn't auto-unlock after login
 
