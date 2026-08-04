@@ -30,7 +30,7 @@ timeline as of writing (2026-07-25).
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
 | Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); root cause of the remaining gap confirmed as Intel ME (CSE) firmware, independent of the host `mei` driver; needs a Dell/Intel firmware update | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
-| Power | Battery charge-limit sysfs attributes exist but every read/write fails (ENXIO/EIO) | Unresolved, root cause identified — Dell SMBIOS custom-charge tokens likely unpopulated in this BIOS build | [known-issues.md](known-issues.md) |
+| Power | Battery charge-limit sysfs attributes exist but every read/write fails (ENXIO/EIO) | Root cause confirmed (BIOS `Battery Charge Configuration` = `ExpressCharge™`, not `Custom`); accepted as-is, not pursued | [power/battery-charge-limit.md](power/battery-charge-limit.md) |
 | Camera | kamoso negotiates raw YUYV @ 1080p, capped at 5fps (Chrome unaffected) | Workaround (avoid kamoso, or cap its resolution); app itself unpatched | [camera/kamoso-raw-format-5fps.md](camera/kamoso-raw-format-5fps.md) |
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
 | Audio | Hot/noisy mic — UCM ships no default capture gain (boots at hardware max) | Fixed (persisted ALSA state) | [audio/cs42l43-mic-gain-fix.md](audio/cs42l43-mic-gain-fix.md) |
@@ -65,7 +65,7 @@ face-unlock-biopass/       biopass fork: resident daemon + NPU backend (supersed
 face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, screen-spoof physics finding
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
-                           S0ix substates never entered
+                           S0ix substates never entered; battery charge-limit BIOS setting
 shell/                     bash-completion setup for gaze/claude/bat; ble.sh tried & reverted
 known-issues.md            everything still open/unresolved
 ```

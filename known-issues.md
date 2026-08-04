@@ -84,54 +84,6 @@ Remaining genuine driver-maturity notes:
   here until there's time to build it; will get its own doc under `audio/` once
   there's something concrete.
 
-## Battery charge limit (custom charge threshold) fails with I/O errors
-
-`BAT0` exposes `charge_control_start_threshold`, `charge_control_end_threshold`,
-and `charge_types` in sysfs — the `dell_laptop` module is loaded and has
-registered its battery hook against the generic ACPI battery device
-(`PNP0C0A`), and KDE PowerDevil sees the capability too (its
-`chargethresholdhelper` D-Bus helper is active). But every read or write
-against these attributes fails:
-
-```
-$ cat charge_control_end_threshold
-cat: charge_control_end_threshold: No such device or address   # ENXIO
-$ cat charge_control_start_threshold
-cat: charge_control_start_threshold: No such device or address # ENXIO
-$ cat charge_types
-cat: charge_types: Input/output error                          # EIO
-$ echo 80 | sudo tee charge_control_end_threshold
-tee: charge_control_end_threshold: No such device or address   # ENXIO
-```
-
-Nothing charge-related ever lands in `~/.config/powerdevilrc` either — PowerDevil's
-own attempts to set a limit fail the same way, silently.
-
-Per the upstream kernel patch that implements this
-(["platform/x86:dell-laptop: Add knobs to change battery charge settings"](https://lkml.iu.edu/hypermail/linux/kernel/2408.2/04555.html)),
-these sysfs attributes are backed by two Dell SMBIOS tokens —
-`BAT_CUSTOM_CHARGE_START` (`0x0349`) and `BAT_CUSTOM_CHARGE_END` (`0x034A`) —
-read via `dell_send_request_for_tokenid()`. Driver code is present and
-correctly wired (the attributes exist, the battery hook is registered); the
-failure is one layer down, in the SMBIOS call itself.
-
-Confirmed via BIOS Setup (Advanced menu, InsydeH2O) photographed 2026-08-04:
-`Battery Charge Configuration` is a real, present option — currently set to
-the factory-default `ExpressCharge™`, not `Custom`. (Initial theory here was
-that Dell hadn't implemented the custom-charge SMBIOS tokens at all in this
-BIOS build, by analogy with the [CS35L56 sidecar-amp
-quirk](audio/cs35l56-sidecar-amp-quirk.md); that's ruled out — the option
-exists, it's just not selected.) The `BAT_CUSTOM_CHARGE_START/END` tokens are
-almost certainly only live when this mode is `Custom`; on `ExpressCharge™`
-there's nothing for the OS-side threshold calls to act on, which explains the
-ENXIO/EIO exactly. A separate `Advanced Battery Charge Configuration` entry
-(currently `Disabled`) is a different feature (scheduled/conditional
-charging), not required for the basic threshold.
-
-Next step: set `Battery Charge Configuration` → `Custom` in BIOS Setup, save,
-reboot, and re-test `charge_control_start/end_threshold` from Linux. Not yet
-verified as of this writing.
-
 ## KWallet doesn't auto-unlock after login
 
 Originally suspected as a face-auth gap (AuthFace's `kde-fingerprint` PAM
@@ -175,6 +127,14 @@ libinput mechanism not pinned down yet. Full investigation:
   kernel patch (one DMI quirk entry, following an exact already-merged
   precedent for a sibling SKU). Full investigation and fix:
   [audio/cs35l56-sidecar-amp-quirk.md](audio/cs35l56-sidecar-amp-quirk.md).
+
+- **Battery charge-limit sysfs attributes fail with ENXIO/EIO** — was tracked
+  here as unresolved (initially suspected as missing Dell SMBIOS tokens, by
+  analogy with the CS35L56 gap above). Root cause confirmed 2026-08-04 as BIOS
+  `Battery Charge Configuration` being set to `ExpressCharge™` instead of
+  `Custom` — a BIOS setting, not a firmware/driver gap. Accepted as-is
+  (battery longevity isn't a priority here), not pursued further. Full
+  investigation: [power/battery-charge-limit.md](power/battery-charge-limit.md).
 
 ## General assessment
 
