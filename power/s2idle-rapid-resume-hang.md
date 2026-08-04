@@ -1,7 +1,11 @@
 # Rapid lid-cycling on `s2idle` resume causes an unresumable hang
 
 **Status:** Mitigated (behavioral + diagnostics), not fixed. No config change resolves
-the underlying bug — see [Root cause](#root-cause).
+the underlying bug — see [Root cause](#root-cause). A second incident on
+2026-08-03 (below) shows a different failure signature (no suspend attempt
+preceded the hang, VT switch also failed to recover it) — likely a related but
+distinct bug, not a repeat of the same one. `polkitd` debug logging added as a
+result; still not root-caused.
 
 ## What happened
 
@@ -106,6 +110,90 @@ failure, and it would trade away legitimate auto-recovery for any hang that woul
 otherwise self-heal via a normal reset. Revisit only with real evidence (e.g. GuC
 logs from a future occurrence) that it would actually help.
 
+## Second incident (2026-08-03): suspend denied by polkit, not a GuC/GSC deadlock
+
+A second unresumable hang happened 2026-08-03 ~20:44 EDT, again after rapid lid
+cycling, again ending in a forced power-off — but the evidence this time points at
+a **different mechanism** than the 2026-07-25 incident above, not a repeat of it.
+
+**What happened:** between 20:38 and 20:44:31, the lid was cycled 13 times. AC
+power was connected throughout (`ACPI: AC: AC Adapter [ADP1] (on-line)`, logged
+once at boot, no further transitions logged that boot — so a change in power
+source doesn't explain the pattern below, though a *static* AC-vs-battery
+PowerDevil lid-action profile hasn't been ruled out as a contributing factor).
+Only 2 of the 13 closes actually suspended (`PM: suspend entry` logged in the same
+second as `Lid closed`, clean resume both times). The other 11 all produced:
+
+```
+polkitd: Operator of unix-session:2 FAILED to authenticate to gain authorization
+for action org.freedesktop.login1.suspend for system-bus-name::1.83
+[/usr/libexec/org_kde_powerdevil] (owned by unix-user:karanshukla)
+```
+
+— with no `PM: suspend entry` at all, arriving several seconds to ~25s after the
+corresponding `Lid closed` (vs. same-second for the 2 that succeeded). The fatal
+close, 20:44:31, was the last event logged in the boot; nothing else from the
+kernel or logind followed. One userspace flatpak process kept writing its own
+client-side log lines once a second until 20:45:01 (proving the kernel and
+journald were still alive), but display and input were both fully dead —
+**Ctrl+Alt+F3 (VT switch) did not recover it either**, which the 2026-07-25
+incident never tested. That's the strongest new data point: it argues against a
+suspend/resume-path deadlock specifically (nothing even suspended on the fatal
+close) and toward the DRM/panel-power path itself — the `xe` driver's
+connector/CRTC/backlight handling, which normal DPMS-off/on on lid-close goes
+through independently of suspend — being what's actually wedged.
+
+**Investigated and ruled out** as the cause of the polkit denials:
+- **A static polkit rule blocking the action.** Checked every rule file that
+  ships (`11-fedora-kde-policy`, `plasma-setup-polkit`, `50-default`, upower's
+  rules) — none reference `org.freedesktop.login1.suspend`. It's on the
+  unmodified default policy (`allow_active=yes`, `allow_inactive=auth_admin_keep`).
+- **`sudo` invocations (there were many that evening, for unrelated DKMS/kernel
+  work) knocking `unix-session:2` out of logind's "active" state.** Reproduced
+  live: ran `sudo`, checked `loginctl show-session 2 -p Active` before/during/
+  after — stayed `yes` throughout — and a direct `pkcheck` for the suspend
+  action granted instantly with a sudo child session still present.
+- **PowerDevil crashing and dropping its `block`-mode inhibitor on
+  `handle-lid-switch`** (the mechanism that's supposed to keep logind's own
+  native `HandleLidSwitch=suspend` — confirmed live, default, unoverridden —
+  from *also* independently firing on every lid event). No PowerDevil restart
+  is logged that boot; it started once at login and ran continuously. This
+  doesn't rule out the inhibitor lapsing for some other reason, just rules out
+  the obvious "it crashed" explanation.
+
+**Not root-caused.** The one solid, reproducible signal is the timing split
+itself: the 2 successes were instantaneous (`Lid closed` and `PM: suspend entry`
+in the same second), while all 11 failures had a multi-second gap before the
+denial — consistent with polkit falling into the `allow_inactive` branch
+(session judged not-active at that instant, which a non-interactive background
+call can never satisfy, so it eventually times out and fails) rather than the
+instant `allow_active` grant every other test today produced. Why polkit would
+judge the session inactive only during this incident isn't established.
+`polkitd` runs at `--log-level=notice` by default, which logs only the verdict,
+not the reasoning — see Mitigations below for the fix to that going forward.
+
+## Mitigations applied (2026-08-03 addition)
+
+**`polkitd` debug logging enabled**, so a repeat occurrence produces the actual
+authorization-decision reasoning instead of just a pass/fail verdict:
+
+```
+sudo mkdir -p /etc/systemd/system/polkit.service.d
+sudo tee /etc/systemd/system/polkit.service.d/99-debug-logging.conf <<'EOF'
+[Service]
+ExecStart=
+ExecStart=/usr/lib/polkit-1/polkitd --no-debug --log-level=debug
+EOF
+sudo systemctl daemon-reload
+sudo systemctl restart polkit.service
+```
+
+Verified polkit still authorizes normally after the restart (`pkcheck` against
+`org.freedesktop.login1.suspend` returns success). Same rationale as the
+existing `xe.guc_log_level=3` mitigation below: pure logging increase, no
+behavior change, in place so the next occurrence produces real diagnostic data
+instead of another after-the-fact timing reconstruction.
+
 ## Trade-off accepted
 
 Still on `s2idle` (the right default per [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md)).
@@ -130,3 +218,24 @@ just what happened this time. Useful evidence for an upstream report against
   hang/deadlock, not a crash.
 - `xe.guc_log_level=3` is now enabled going forward, so a repeat occurrence should
   produce real GuC firmware log data to attach.
+
+**2026-08-03 incident addendum** — useful evidence for a *second*, likely
+separate report (this one probably against `kde/powerdevil` or the
+`xe`/DRM panel-power path rather than firmware re-init):
+
+- The fatal hang was **not** preceded by a real suspend — no `PM: suspend entry`
+  at all on the last lid close, unlike the 2026-07-25 incident where the third
+  cycle at least reached the suspend call before wedging.
+- **VT switch (Ctrl+Alt+F3) also failed to recover it** — new data point,
+  untested in the first incident — pointing at the DRM/panel-power (DPMS)
+  path rather than the suspend/resume path specifically.
+- 11 of 13 lid-close events that boot got `polkitd: ... FAILED to authenticate`
+  for `org.freedesktop.login1.suspend`, requested by `org_kde_powerdevil`, with
+  no corresponding kernel suspend activity — a separate, unexplained oddity
+  co-occurring with (not necessarily causing) the hang. `polkitd` is now running
+  with `--log-level=debug` (see Mitigations) so a repeat should show the actual
+  authorization decision, not just the verdict.
+- Kernel/journald/network stayed alive after the hang (a flatpak process kept
+  logging once a second for another 30s) — this is a display/input-level wedge,
+  not a full kernel freeze or panic (no panic/oops/wedged-GPU signature anywhere
+  in the log).
