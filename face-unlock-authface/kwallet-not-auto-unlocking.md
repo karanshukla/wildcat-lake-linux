@@ -373,7 +373,7 @@ descriptor`, or `too many open files` in bitwarden/clients turned up an
 existing report matching this specific leak location — looks like a third,
 not-yet-reported instance of the same "Bitwarden retries forever against
 stale D-Bus/portal state without backing off or cleaning up" bug pattern.
-Not filed upstream yet.
+Filed upstream: [bitwarden/clients#22210](https://github.com/bitwarden/clients/issues/22210).
 
 ## For a bug report
 
