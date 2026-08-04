@@ -215,6 +215,52 @@ closing out this specific lead — accepted as a known, live risk rather than
 traded away. Revisit if the hang starts recurring often enough to outweigh the
 convenience.
 
+**Update (2026-08-04): new correlating evidence, still not confirmed.** The
+blank-screen failure has never once occurred waking from a source other than
+lid-open (keypress, power button) — only lid-open triggers it. That's
+consistent with the race theory above: non-lid wakes only go through the
+normal ACPI-mediated logind/kernel resume path, while lid-open uniquely adds
+the EC's independent `Power on LID open` signal racing against that same
+path. Circumstantial, not proof — no BIOS A/B test has been run yet.
+
+Two real blank-screen incidents were captured this same day with
+`capture-blank-resume-state.sh` (19:29 and 20:48 EDT), but neither is usable
+as evidence: the script dumped `guc_log_dmesg` *before* grabbing
+`journalctl -n 300`, and that dump (130-300+ lines of an unwritten/poisoned
+GuC log ring, all `z` filler) evicted the actual resume/lid/HPD lines from
+the 300-line window — one capture is 100% GuC-dump noise, zero real log
+content. Script fixed (journal/dmesg tails now grabbed first, GuC dump moved
+last) so the next occurrence produces usable data.
+
+What the captures *did* show, despite the log eviction: `atomic-state.txt`
+for both incidents shows a fully normal-looking pipe A, CRTC active, a real
+attached framebuffer (not `FB:0`), DPMS on, backlight on, PSR correctly
+disabled. The driver's own view of the display pipe is completely healthy
+during the black-screen state. That argues against an atomic-commit/DSB-style
+deadlock as the mechanism for *this* symptom specifically (unlike the
+PSR/DSB bug in [psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md)) — if
+the fault were there, the atomic state dump should show it. Points instead at
+something downstream of the atomic commit: the physical eDP link/panel power
+sequencing, plausibly consistent with an EC-level power-on event racing the
+driver's resume path before the panel is actually in the state the atomic
+dump reports.
+
+**Proposed confirmation test (not yet run):** disable `Power on LID open` in
+BIOS, then reproduce the normal suspend/lid-open workflow over several
+cycles, including at least one deliberately slow open (per the hysteresis
+theory above). If the blank-screen state stops recurring where it previously
+would have, that confirms the EC signal as the trigger. Cheap, fully
+reversible, only cost is losing auto-wake-on-open (a keypress would be needed
+after opening the lid).
+
+**If confirmed, this is a real root-cause fix, not just a workaround** — it
+removes one side of the actual race (EC hardware trigger vs. ACPI-mediated
+resume) rather than avoiding the trigger behaviorally. It does not fix the
+underlying reason the `xe` driver's panel-power path can't tolerate two
+concurrent wake triggers in the first place — that's a driver-maturity gap
+needing an upstream fix, same bucket as the DSB deadlock — but no OS-side
+lever touches that part regardless.
+
 ## Mitigations applied (2026-08-03 addition)
 
 **`polkitd` debug logging enabled**, so a repeat occurrence produces the actual
