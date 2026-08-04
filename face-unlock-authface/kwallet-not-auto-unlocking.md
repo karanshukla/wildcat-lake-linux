@@ -349,6 +349,32 @@ KWallet/`ksecretd` one, even though `ksecretd` is what pays for it). Native
 Bitwarden clients (non-Flatpak) that don't go through the portal wouldn't
 hit this at all, if avoiding Flatpak entirely is preferable to autostart-only.
 
+**Checked upstream — this is a known bug *family*, but not this exact
+instance.** [bitwarden/clients#20909](https://github.com/bitwarden/clients/issues/20909)
+(closed, filed 2026-06-15) describes the identical failure mode on
+essentially identical hardware/OS (Fedora 44, KDE Plasma Wayland, Bitwarden
+Flatpak from Flathub) — the desktop app opens D-Bus connections continuously
+and never closes them, until something in the D-Bus ecosystem hits
+`EMFILE`/"Too many open files" and dies. The fix,
+[PR #20919](https://github.com/bitwarden/clients/pull/20919) (merged
+2026-06-15), targeted a specific leak in the `powermonitor`/lock-monitor
+D-Bus reconnect path. That fix predates this machine's installed build
+(2026.7.0, Flatpak commit `6f28ad5d1fdf47ac32e549ddcfe1cfe8cda7804390b39fb25fdebc1281f23a64`,
+deployed 2026-07-27) — so it's already included, and this is **not** that bug
+recurring. Tonight's leak was driven by a stale `ashpd`/zbus portal
+property-watch retry, a different code path than the one #20919 patched.
+Also distinct from the still-open
+[bitwarden/clients#22092](https://github.com/bitwarden/clients/issues/22092)
+(same 2026.7.0 build, same general "retries forever against stale state"
+pattern, but manifesting as a `data.json` disk-write loop under GNOME/X11 +
+`gnome-keyring`, not an fd leak under KDE/Wayland + `ksecretd`). None of a
+search for `ashpd`, `GWakeup`, `kwallet portal`, `ksecretd`, `file
+descriptor`, or `too many open files` in bitwarden/clients turned up an
+existing report matching this specific leak location — looks like a third,
+not-yet-reported instance of the same "Bitwarden retries forever against
+stale D-Bus/portal state without backing off or cleaning up" bug pattern.
+Not filed upstream yet.
+
 ## For a bug report
 
 Already reported upstream, no action needed from this end beyond linking
