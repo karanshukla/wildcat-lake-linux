@@ -1,6 +1,6 @@
 # KWallet doesn't auto-unlock with face-auth login/unlock
 
-**Status (2026-08-02, updated): unresolved, accepted as a known upstream
+**Status (2026-08-03, updated): unresolved, accepted as a known upstream
 KDE bug, no local fix pursued.** Original root cause theory (face-auth
 bypasses `pam_kwallet5`) falsified — reproduced with face-auth disabled.
 Root cause is a boot-time race between `pam_kwallet_init`'s ephemeral
@@ -8,7 +8,10 @@ credential socket and `kwalletd`'s lazy D-Bus-activated startup, confirmed
 as a long-standing, still-open KDE bug (bugs.kde.org #433223, #416461,
 recurring into Plasma 6.18) rather than a local misconfiguration. One
 candidate local workaround was tried and reverted — see "2026-08-02 update"
-below.
+below. **2026-08-03 update:** confirmed reprompting *within* a single
+session (not just once per boot) — each portal connection can spin up its
+own independently-locked `ksecretd` instance, and Bitwarden's autostarted
+Flatpak app is the identified repeat offender; see that section below.
 
 ## Symptom
 
@@ -233,6 +236,55 @@ Treating this as accepted: type the password once per boot when it prompts,
 `kwalletrc`'s idle/screensaver auto-close being off means it should hold for
 the rest of the session. Revisit only if upstream ships a fix, or if it
 starts reprompting *within* a session rather than once per boot.
+
+## 2026-08-03 update: reprompts within a single session, not just once per boot
+
+The 2026-08-02 update's closing note said this should be revisited "if it
+starts reprompting *within* a session rather than once per boot." That
+happened tonight: two separate prompts, 21:20:26 and 21:28:52, 8 minutes
+apart, same boot, well past the login window.
+
+**Root cause extension — the portal's `kwallet` backend isn't a shared
+singleton.** `org.freedesktop.impl.portal.desktop.kwallet` is activated as a
+fresh transient systemd service per connection (`dbus-:1.1-...@0.service`,
+`@1.service`, incrementing), each spawning its own independent `ksecretd`
+process with its own independent lock state — confirmed live: two `ksecretd`
+PIDs (10392, 14432) running simultaneously, `org.freedesktop.Secret.Collection
+Locked` true on the current one despite an earlier instance having already
+been unlocked/prompted this session. This is a different (and separate)
+process from `kwalletd6` (confirmed previously) — `kwalletd6`'s own `isOpen
+kdewallet` also independently reads `false` right now, so neither backend
+ever got the PAM-handed-off password this boot, and each is locked on its own
+schedule. "Type the password once and it holds" only works if nothing ever
+opens a second independent portal connection for the rest of the boot — not a
+safe assumption.
+
+**Repeat offender identified: Bitwarden's Flatpak app.** `com.bitwarden.desktop`
+autostarts at login (`/app/Bitwarden/bitwarden-app --autostart ...`, PID 2829)
+and is running as *two* parallel sandboxed instances (`flatpak ps` shows two
+separate app IDs under `com.bitwarden.desktop`). It's spamming a failed
+`ashpd`/zbus property-watch retry once a second:
+
+```
+flatpak[2829]: [NAPI] [WARN] zbus::proxy: Failed to populate properties cache
+via GetAll: org.freedesktop.DBus.Error.UnknownMethod: Object does not exist
+at path "/org/freedesktop/portal/desktop/request/1_128/ashpd_wPY0vGT2R1"
+```
+
+That retry churn correlates with the fresh portal-backend spawns that produced
+tonight's two separate prompts. Not fully root-caused to certainty (didn't
+trace the exact ashpd call graph), but Bitwarden is the only flatpak app
+actively cycling portal connections in the background between the two prompt
+timestamps, and it's the same app the 2026-08-02 entry already flagged as one
+of the multiple apps hitting this path.
+
+**Revised guidance:** still accepted, still no local fix pursued (same
+upstream-race root cause, now shown to recur mid-session rather than once).
+Practical expectation update: don't expect one manual unlock to hold for the
+whole session — with Bitwarden's Flatpak autostarted, a second or third prompt
+in the same boot is plausible. If this becomes annoying enough to revisit,
+the cheapest lever is disabling Bitwarden's Flatpak autostart (trades away
+auto-launch for fewer cold portal-backend spawns), not a KWallet/PAM change.
 
 ## For a bug report
 
