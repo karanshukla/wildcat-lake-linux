@@ -188,6 +188,59 @@ drafted below, it would just duplicate already-merged work. Left in place as
 the investigation record and as the actual local fix until Fedora ships a
 kernel built from 7.2-rc3 or later.
 
+### Live-testing the upstream fix
+
+To confirm the upstream mechanism actually works on this hardware rather
+than just trusting the commit log, ported just the real fix (the two
+`SND_PCI_QUIRK` lines from `efd80de2`) onto our known-working Fedora
+7.1.5-201.fc44 source, with our own DMI-quirk entry removed — the
+`sof_sdw_ssid_quirk_table[]` / `sof_sdw_check_ssid_quirk()` infrastructure
+already existed in this exact kernel's source (used by an existing Lenovo
+entry), so this was a 2-line addition, not a backport of newer code. Built
+and signed with the same already-enrolled MOK, live-loaded in place of the
+installed DKMS module.
+
+dmesg confirmed the mechanism works exactly as expected:
+
+```
+sof_sdw sof_sdw: quirk SOC_SDW_SIDECAR_AMPS enabled
+sof_sdw sof_sdw: DAI link numbers: sdw 3, ssp 0, dmic 0, hdmi 3, bt: 1
+```
+
+Both CS35L56 amps loaded firmware and tuning data. However, no audible
+sound came out, despite PipeWire showing signal activity, and mixer/DAPM
+inspection (`amixer -c0`) showed every relevant control — master `Speaker`,
+`AMPL`/`AMPR Speaker`, `cs42l43 Speaker Digital`, DAPM routing to
+`ASPRX1`/`ASPRX2` — already on and correctly wired. Not a software/routing
+problem.
+
+dmesg did show `Failed to write to 'CAL_R': -1` on both amps at load time,
+a genuine hardware-level calibration failure, not the cosmetic SPI
+transients noted elsewhere in this doc. Attempting to recover by unbinding
+and rebinding the CS35L56 SPI devices (`/sys/bus/spi/drivers/cs35l56/{un,}bind`)
+made it worse, not better: the amps' `Cirrus Logic ...` boot log lines never
+reappeared with fresh calibration, and a subsequent module reload failed
+outright (`_cs35l56_component_probe: init_completion timed out`,
+`ASoC error (-19)`, `failed to instantiate card -19`). The `supply VDD_B /
+VDD_AMP not found, using dummy regulator` lines logged at every probe are
+the likely reason: there's no real regulator/power-sequencing framework
+wired to these chips on this platform, so SPI unbind/bind is a logical
+detach, not an electrical power cycle, it can't clear a wedged internal
+amp state the way a real power-off can.
+
+**Ruled out — this session's chaos, not the upstream fix itself.** A
+reboot recovered cleanly (see the [Trade-offs](#trade-offs) update above),
+but came back up on the original DKMS-installed DMI-quirk module, not this
+test build, since the test module only ever lived in memory. So the
+upstream SSID-quirk mechanism is confirmed to activate correctly and
+matches the known-good `SOC_SDW_SIDECAR_AMPS` signature, but hasn't yet
+been verified end-to-end (audibly, from a clean cold boot) the way the local
+DMI-quirk patch has. **Next step, not yet done:** install the upstream-fix
+build as the DKMS module (replacing the DMI-quirk one) and test via a real
+reboot rather than any further live module hot-reloading, this session's
+repeated rmmod/insmod/unbind cycling is the likely reason the amps ended up
+in a bad state at all.
+
 ## Fix
 
 One-line-equivalent change to `sound/soc/intel/boards/sof_sdw.c`, immediately
@@ -286,11 +339,11 @@ source, so check after every update:
   each `dnf update` and when to retire this package.
 - Requires MOK enrollment. Doesn't weaken Secure Boot for anything else, but
   it *is* a standing trust decision, not something to enroll casually.
-- Not yet verified across a clean cold boot (only tested via live
-  module-reload cycles within one already-running session) — the harmless
-  SPI transient errors noted above are worth re-checking after a real
-  power-off/power-on cycle, though audio was confirmed working audibly
-  regardless.
+- **Verified across a clean cold boot (2026-08-03).** A reboot during a
+  separate same-day investigation (see
+  [Live-testing the upstream fix](#live-testing-the-upstream-fix) below)
+  came back up on this DKMS-installed module with no manual steps and
+  working audio, closing the open question above.
 - The bass-boost EQ (`audio/cs42l43-eq-fix.md`) was tuned against
   tweeter-only output; now that real woofers are contributing bass, that
   curve may need retuning — separate follow-up, not addressed here.
