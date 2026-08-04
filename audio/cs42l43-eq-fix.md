@@ -1,6 +1,6 @@
 # Audio: tinny/thin internal speakers (CS42L43 codec)
 
-**Status:** Workaround in place (software EQ). Root cause is unfixed at the driver/firmware level.
+**Status:** Workaround in place (software EQ). Root cause is unfixed at the driver/firmware level. A 2026-08-04 retune attempt was tried and reverted (see below) — current values are still the 2026-08-03 tuning.
 **Component:** CS42L43 codec, `sof-soundwire` ALSA sink
 
 ## Root cause
@@ -10,6 +10,50 @@ all-zero even though `cs42l43 EQ Switch` is on. Dell's real tuning curve was nev
 loaded — only an inert default is present. No published coefficient set exists yet
 for this model. This is **not** a volume/gain issue; turning it up just makes thin
 audio louder.
+
+## Retune attempt (2026-08-04), tried and reverted
+
+A third-party frequency-response measurement comparing the XPS 13 against a
+reference laptop, plus a bass-harmonics sweep (40-400Hz, plotted against each
+device's own noise floor), suggested two changes:
+
+![XPS 13 vs. reference laptop frequency response](images/xps13-frequency-response.png)
+
+![XPS 13 vs. reference laptop bass harmonics](images/xps13-bass-harmonics.png)
+
+- **300-800Hz shortfall.** The XPS trailed the reference by a fairly flat
+  ~8-10dB across that whole range. The old band 2 (200Hz peak, Q=1.1) is too
+  narrow to cover it — it was only ever pulling up a spot right around
+  200Hz, not the broader gap.
+- **6-15kHz reading louder than the reference, not thinner.** The opposite
+  of what you'd guess from "tinny" — in this range the XPS actually output
+  *more* than the reference laptop, and its rolloff above 15kHz was gentler
+  (retained more energy out to 20kHz).
+
+Tried: preamp Mult 0.708→0.631, band 2 shifted/widened to 300Hz/Q0.7/+5dB,
+band 3 to −3dB, band 4 to −2.5dB. **By ear, this was muddier than even the
+raw unequalized sink** — worse than the problem it was meant to fix. Root
+cause: widening band 2's Q from 1.1 to 0.7 roughly doubled its bandwidth,
+pulling its effective range down into ~150-250Hz where it stacked with band
+1's bass shelf — classic low-mid/"boxy" buildup. The simultaneous deeper cuts
+on bands 3-4 compounded it from the other side, removing presence/clarity
+energy that would otherwise have balanced out the extra low-mid weight.
+**Reverted** — `bass-eq.conf` is back to the 2026-08-03 values (preamp
+0.708, band 2: 200Hz/Q1.1/+4dB, band 3: −2dB, band 4: −1.5dB).
+
+Takeaway for next time: a broad, fairly flat gap like the measured
+300-800Hz shortfall isn't a good fit for a single wide peaking bell — the
+bell shape inherently reaches well below its center frequency at low Q,
+so covering the top of a gap this way drags in energy from below it too.
+Two narrower, non-overlapping bells (or leaving low-mid alone entirely)
+would be the next thing to try, not a single wider one. The bass-harmonics
+sweep's finding still stands and needs no revisiting: below ~80Hz the XPS
+sits at its own noise floor, so band 1 shouldn't be pushed further — that
+part matches the existing conclusion below.
+
+Caveat: the frequency-response graph is a single external comparison of
+unknown mic/measurement methodology, not an on-device measurement — treat
+its dB deltas as directional, not gospel.
 
 ## Fix: PipeWire filter-chain EQ
 
@@ -119,6 +163,9 @@ context.modules = [
 | band 4 | peaking | 6 kHz | 1.2 | −1.5 dB | reduce harshness |
 | band 5 | high shelf | 10 kHz | 0.9 | −1 dB | smooth extreme top end |
 | safety clamp | clamp | — | — | ±0.98 | hard limiter so boosts can't digitally clip |
+
+These are the 2026-08-03 values. A 2026-08-04 widen/deepen attempt was
+tried and reverted for sounding muddier — see "Retune attempt" above.
 
 ### `~/.config/wireplumber/wireplumber.conf.d/51-rename-raw-speaker.conf`
 
