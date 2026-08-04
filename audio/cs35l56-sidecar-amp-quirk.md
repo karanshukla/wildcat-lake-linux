@@ -1,6 +1,11 @@
 # Audio: two of four speakers (CS35L56 "sidecar" amps) silent — missing DMI quirk
 
 **Status:** Fixed locally via a signed out-of-tree kernel patch (DKMS + MOK).
+As of 2026-08-03 the DKMS package runs the **actual upstream fix**
+(`efd80de2`'s PCI subsystem-ID quirk), not the DMI-quirk workaround this
+doc was originally built around — see
+[Live-testing the upstream fix](#live-testing-the-upstream-fix) for the
+swap and cold-boot confirmation.
 **Update (2026-08-03): already fixed upstream, no submission needed.** Cirrus
 Logic's Charles Keepax merged a fix for this exact SKU on 2026-07-16
 (`efd80de2de9d06ddf0eee55ca11b04e39bfc7cd8`, tagged for the v7.2-rc3 pull),
@@ -232,19 +237,37 @@ amp state the way a real power-off can.
 reboot recovered cleanly (see the [Trade-offs](#trade-offs) update above),
 but came back up on the original DKMS-installed DMI-quirk module, not this
 test build, since the test module only ever lived in memory. So the
-upstream SSID-quirk mechanism is confirmed to activate correctly and
-matches the known-good `SOC_SDW_SIDECAR_AMPS` signature, but hasn't yet
-been verified end-to-end (audibly, from a clean cold boot) the way the local
-DMI-quirk patch has. **Next step, not yet done:** install the upstream-fix
-build as the DKMS module (replacing the DMI-quirk one) and test via a real
-reboot rather than any further live module hot-reloading, this session's
-repeated rmmod/insmod/unbind cycling is the likely reason the amps ended up
-in a bad state at all.
+upstream SSID-quirk mechanism was confirmed to activate correctly and
+matched the known-good `SOC_SDW_SIDECAR_AMPS` signature, but hadn't yet
+been verified end-to-end (audibly, from a clean cold boot) the way the
+local DMI-quirk patch had.
+
+**Confirmed working (2026-08-03, same day).** Replaced the DKMS package's
+source with the ported upstream fix (removing our own DMI-quirk entry
+entirely, so nothing but the real `efd80de2` mechanism is doing the work),
+rebuilt and reinstalled via `dkms remove` → edit source → `dkms add/build/
+install`, then rebooted rather than doing any more live module swapping.
+Cold boot came up with both amps loading firmware cleanly (no `CAL_R`
+failure this time, unlike every hot-reload attempt earlier this session)
+and **working audio confirmed audibly**. This is now the mechanism actually
+running on this machine, superseding the DMI-quirk approach documented
+above, which is kept as investigation history rather than deleted. Also
+picked up more corroborating WCL evidence at boot: ACPI SSDT tables
+literally named `DELL WCL`/`WclNRvp2`, and the SOF firmware path is
+`intel/sof-ipc4/wcl/sof-wcl.ri`, Wildcat Lake confirmed at the firmware
+level too, not just inferred from `lscpu` and the quirk-table labels.
 
 ## Fix
 
-One-line-equivalent change to `sound/soc/intel/boards/sof_sdw.c`, immediately
-after the existing `0DD6` entry:
+**Superseded by the real upstream mechanism as of 2026-08-03** — see
+[Live-testing the upstream fix](#live-testing-the-upstream-fix). The DKMS
+package now carries `efd80de2`'s two-line PCI SSID quirk instead of the
+DMI-quirk entry below. Kept as-written since the build/sign/DKMS mechanics
+(MOK enrollment, `dkms add/build/install`, `dnf update` behavior) are
+identical either way, only the actual code diff changed.
+
+Original one-line-equivalent change to `sound/soc/intel/boards/sof_sdw.c`,
+immediately after the existing `0DD6` entry:
 
 ```c
 {
