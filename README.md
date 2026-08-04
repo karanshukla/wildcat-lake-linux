@@ -30,6 +30,7 @@ timeline as of writing (2026-07-25).
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
 | Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); root cause of the remaining gap confirmed as Intel ME (CSE) firmware, independent of the host `mei` driver; needs a Dell/Intel firmware update | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
+| Power | Battery charge-limit sysfs attributes exist but every read/write fails (ENXIO/EIO) | Unresolved, root cause identified — Dell SMBIOS custom-charge tokens likely unpopulated in this BIOS build | [known-issues.md](known-issues.md) |
 | Camera | kamoso negotiates raw YUYV @ 1080p, capped at 5fps (Chrome unaffected) | Workaround (avoid kamoso, or cap its resolution); app itself unpatched | [camera/kamoso-raw-format-5fps.md](camera/kamoso-raw-format-5fps.md) |
 | Audio | Tinny speakers — zeroed CS42L43 EQ coefficients | Worked around (PipeWire software EQ) | [audio/cs42l43-eq-fix.md](audio/cs42l43-eq-fix.md) |
 | Audio | Hot/noisy mic — UCM ships no default capture gain (boots at hardware max) | Fixed (persisted ALSA state) | [audio/cs42l43-mic-gain-fix.md](audio/cs42l43-mic-gain-fix.md) |

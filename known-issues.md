@@ -84,6 +84,56 @@ Remaining genuine driver-maturity notes:
   here until there's time to build it; will get its own doc under `audio/` once
   there's something concrete.
 
+## Battery charge limit (custom charge threshold) fails with I/O errors
+
+`BAT0` exposes `charge_control_start_threshold`, `charge_control_end_threshold`,
+and `charge_types` in sysfs — the `dell_laptop` module is loaded and has
+registered its battery hook against the generic ACPI battery device
+(`PNP0C0A`), and KDE PowerDevil sees the capability too (its
+`chargethresholdhelper` D-Bus helper is active). But every read or write
+against these attributes fails:
+
+```
+$ cat charge_control_end_threshold
+cat: charge_control_end_threshold: No such device or address   # ENXIO
+$ cat charge_control_start_threshold
+cat: charge_control_start_threshold: No such device or address # ENXIO
+$ cat charge_types
+cat: charge_types: Input/output error                          # EIO
+$ echo 80 | sudo tee charge_control_end_threshold
+tee: charge_control_end_threshold: No such device or address   # ENXIO
+```
+
+Nothing charge-related ever lands in `~/.config/powerdevilrc` either — PowerDevil's
+own attempts to set a limit fail the same way, silently.
+
+Per the upstream kernel patch that implements this
+(["platform/x86:dell-laptop: Add knobs to change battery charge settings"](https://lkml.iu.edu/hypermail/linux/kernel/2408.2/04555.html)),
+these sysfs attributes are backed by two Dell SMBIOS tokens —
+`BAT_CUSTOM_CHARGE_START` (`0x0349`) and `BAT_CUSTOM_CHARGE_END` (`0x034A`) —
+read via `dell_send_request_for_tokenid()`. When a token isn't present in the
+BIOS's SMBIOS token table, that call fails and propagates straight through as
+ENXIO/EIO on the sysfs file — matching exactly what's observed here. Driver
+code is present and correctly wired (the attributes exist, the hook is
+registered); the failure is one layer down, in the SMBIOS call itself.
+
+BIOS is `1.3.0` (2026-06-25) on `XPS 13 DX13260`; `fwupdmgr get-updates`
+reports nothing newer, so this isn't a "flash the latest BIOS" fix. Given this
+machine's track record of BIOS/kernel-side gaps specific to early Wildcat Lake
+silicon (see the [CS35L56 sidecar-amp quirk](audio/cs35l56-sidecar-amp-quirk.md),
+which needed an upstream DMI-quirk fix for this exact SKU), the working theory
+is that Dell hasn't populated the custom-charge SMBIOS tokens for this BIOS
+release yet, rather than a local misconfiguration.
+
+Not yet confirmed: whether BIOS Setup (F2 at boot) even exposes a "Battery
+Charge Configuration → Custom" option — if that setting is entirely absent
+from BIOS Setup, that would confirm the tokens aren't implemented in this BIOS
+build at all. Kernel dynamic-debug tracing would pin down the exact failing
+SMBIOS call, but `/sys/kernel/debug/dynamic_debug/control` is write-blocked
+under Secure Boot lockdown on this machine (consistent with the MOK-signed
+module setup documented in the CS35L56 doc) — that route needs Secure Boot
+temporarily disabled or a boot-time `dyndbg=` kernel param instead.
+
 ## KWallet doesn't auto-unlock after login
 
 Originally suspected as a face-auth gap (AuthFace's `kde-fingerprint` PAM
