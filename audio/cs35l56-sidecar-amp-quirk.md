@@ -1,8 +1,14 @@
 # Audio: two of four speakers (CS35L56 "sidecar" amps) silent — missing DMI quirk
 
-**Status:** Fixed locally via a signed out-of-tree kernel patch (DKMS + MOK), pending
-upstream. Root cause is a missing one-entry DMI quirk in the mainline
-`sof_sdw` driver for this exact Dell SKU.
+**Status:** Fixed locally via a signed out-of-tree kernel patch (DKMS + MOK).
+**Update (2026-08-03): already fixed upstream, no submission needed.** Cirrus
+Logic's Charles Keepax merged a fix for this exact SKU on 2026-07-16
+(`efd80de2de9d06ddf0eee55ca11b04e39bfc7cd8`, tagged for the v7.2-rc3 pull),
+via a different mechanism than the one this doc originally proposed
+submitting (PCI subsystem-ID quirk, not a DMI quirk). See
+[Upstream status](#upstream-status) below. The local DKMS patch stays in
+place only until Fedora ships a 7.2+-based kernel; see
+[On kernel update](#on-kernel-update).
 **Component:** `sof_sdw` SoundWire machine driver, CS42L43 codec + 2x CS35L56 amps
 **Hardware:** Dell XPS 13 DX13260 (Wildcat Lake), DMI `product_sku` **0E53**
 
@@ -131,6 +137,57 @@ in the fix; worth re-checking after a clean cold boot. Restarted PipeWire/
 WirePlumber and confirmed **audibly** — real, working bass from both
 woofers, not just a clean probe log.
 
+## Upstream status
+
+Before submitting the patch below, checked it against a live pull of Mark
+Brown's ASoC tree (`git://git.kernel.org/pub/scm/linux/kernel/git/broonie/sound.git`,
+`for-next`) rather than assuming the DMI-quirk precedent below was still the
+open path. It wasn't — Cirrus Logic's Charles Keepax had already fixed this
+exact SKU, three weeks before this investigation, via a completely different
+mechanism:
+
+```
+commit efd80de2de9d06ddf0eee55ca11b04e39bfc7cd8
+Author: Charles Keepax <ckeepax@opensource.cirrus.com>
+Date:   2026-07-16 15:42:09 +0100 (tagged asoc-fix-v7.2-rc3)
+
+    ASoC: Intel: sof_sdw: Add quirks for new Dell laptops
+
+    A couple of new Dell laptops are shipping using the sidecar amp
+    configuration. Add the required kernel quirk to enable.
+```
+
+```c
+ static const struct snd_pci_quirk sof_sdw_ssid_quirk_table[] = {
++	SND_PCI_QUIRK(0x1028, 0x0e53, "Dell XPS WCL", SOC_SDW_SIDECAR_AMPS),
++	SND_PCI_QUIRK(0x1028, 0x0e54, "Dell XPS PTL", SOC_SDW_SIDECAR_AMPS),
+ 	SND_PCI_QUIRK(0x1043, 0x1e13, "ASUS Zenbook S14", SOC_SDW_CODEC_MIC),
+```
+
+This matches on PCI subsystem vendor/device ID (`0x1028`/`0x0e53`, read from
+real PCI config space) via `sof_sdw_check_ssid_quirk()`, called earlier in
+probe than `dmi_check_system(sof_sdw_quirk_table)` — independently sufficient
+to set `SOC_SDW_SIDECAR_AMPS` for this hardware, with or without a DMI-table
+entry. Tagged for the v7.2-rc3 pull, so it should already be in any kernel
+based on 7.2-rc3 or later — matching this session's separate finding that
+audio "just works" on a 7.2.0-rc4 build (see commit history), which is this
+fix, not the DMI-quirk precedent (`12cacdfb023d`) this doc was originally
+built around.
+
+Also settles a naming question this repo has left ambiguous
+(`README.md` hedges "Wildcat Lake / Panther Lake"): Keepax's own quirk
+labels distinguish `0x0e53` as **"Dell XPS WCL"** (Wildcat Lake) from a
+sibling `0x0e54` **"Dell XPS PTL"** (Panther Lake) — two distinct SKUs of
+this chassis. `lscpu` on this machine reports `Intel(R) Core(TM) 5 320`
+(Core Series 3 branding, i.e. Wildcat Lake; Panther Lake ships as Core
+*Ultra* Series 3), consistent with the `0x0e53` SSID actually detected.
+This machine is Wildcat Lake, not Panther Lake.
+
+**Practical upshot:** no upstream submission needed for the DMI-quirk patch
+drafted below, it would just duplicate already-merged work. Left in place as
+the investigation record and as the actual local fix until Fedora ships a
+kernel built from 7.2-rc3 or later.
+
 ## Fix
 
 One-line-equivalent change to `sound/soc/intel/boards/sof_sdw.c`, immediately
@@ -210,20 +267,23 @@ source, so check after every update:
 2. **If it built successfully**, listen for woofers anyway — a clean build
    doesn't guarantee upstream didn't change something else in that file
    between versions that our frozen copy silently reverts.
-3. **If a Fedora kernel update ever ships the real upstream `0E53` quirk**
-   (watch for the precedent-style commit landing, or just: audio keeps
-   working *and* `dkms status` shows our package built against a kernel that
-   didn't need it), remove this package so it stops shadowing the in-tree
-   fix: `dkms remove -m sof-sdw-sidecar-0e53 -v 1.0 --all`.
+3. **If a Fedora kernel update ever ships the real upstream fix**
+   (specifically commit `efd80de2de9d06ddf0eee55ca11b04e39bfc7cd8`, tagged
+   `asoc-fix-v7.2-rc3` — so any Fedora kernel built from 7.2-rc3 or later
+   should already have it; see [Upstream status](#upstream-status)), remove
+   this package so it stops shadowing the in-tree fix:
+   `dkms remove -m sof-sdw-sidecar-0e53 -v 1.0 --all`.
 
 ## Trade-offs
 
-- This is a **local bridge, not a permanent solution** — it re-implements a
-  single already-upstream mechanism for one additional SKU, following an
-  exact precedent, and rebuilds from a frozen copy of the source on every
-  kernel update rather than the new kernel's actual code. See
-  [On kernel update](#on-kernel-update) above for what to check after each
-  `dnf update` and when to retire this package.
+- This is a **local bridge, not a permanent solution** — and, as of
+  2026-08-03, a genuinely temporary one: upstream already fixed this SKU by
+  a different mechanism (see [Upstream status](#upstream-status)), so this
+  package just needs to survive until Fedora ships a 7.2-rc3+-based kernel,
+  not indefinitely. It rebuilds from a frozen copy of the source on every
+  kernel update rather than the new kernel's actual code in the meantime.
+  See [On kernel update](#on-kernel-update) above for what to check after
+  each `dnf update` and when to retire this package.
 - Requires MOK enrollment. Doesn't weaken Secure Boot for anything else, but
   it *is* a standing trust decision, not something to enroll casually.
 - Not yet verified across a clean cold boot (only tested via live
@@ -237,14 +297,24 @@ source, so check after every update:
 
 ## For a bug report / upstream submission
 
-This is essentially ready to submit upstream as-is, following the exact
-precedent already merged for SKU `0DD6`:
+**Superseded — do not submit.** See [Upstream status](#upstream-status):
+this was already fixed upstream on 2026-07-16
+(`efd80de2de9d06ddf0eee55ca11b04e39bfc7cd8`), before this section was
+originally written. A patch was drafted below (DMI-quirk mechanism,
+following the `0DD6` precedent), validated with `checkpatch.pl` and a real
+`get_maintainer.pl` recipient lookup, but caught as redundant during a
+final pre-send check against the live upstream tree, and was never sent.
+Keeping the original reasoning below as the investigation record.
+
+Original plan, for reference:
 
 - **Patch:** one entry in `sound/soc/intel/boards/sof_sdw.c`'s
   `sof_sdw_quirk_table[]`, shown above.
 - **Precedent:** commit `12cacdfb023d1b2f6c4e5af471f2d5b6f0cbf909`
   ("ASoC: Intel: sof_sdw: Add new quirks for PTL on Dell with CS42L43"),
-  same mechanism, different SKU, already reviewed and merged.
+  same *kind* of mechanism (DMI quirk table), different SKU, already
+  reviewed and merged — but not the mechanism that actually ended up
+  fixing `0E53` upstream (that was a PCI SSID quirk instead, see above).
 - **Hardware:** Dell XPS 13 DX13260, DMI `sys_vendor` "Dell Inc.",
   `product_sku` "0E53", `product_name` "XPS 13 DX13260"; SoundWire link 2,
   `mfg_id` 0x01fa, `part_id` 0x4243, version 0x3; CS42L43 codec + 2x CS35L56
@@ -252,5 +322,3 @@ precedent already merged for SKU `0DD6`:
 - **Evidence this fixes the actual symptom** (not just avoids a crash):
   confirmed audibly, both woofers producing sound, after being silent on
   every topology the unpatched driver could select.
-- **Target:** `alsa-devel` mailing list / the SOF project, same route as the
-  precedent commit.
