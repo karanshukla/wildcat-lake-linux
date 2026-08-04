@@ -12,6 +12,11 @@ below. **2026-08-03 update:** confirmed reprompting *within* a single
 session (not just once per boot) — each portal connection can spin up its
 own independently-locked `ksecretd` instance, and Bitwarden's autostarted
 Flatpak app is the identified repeat offender; see that section below.
+**2026-08-03, second update:** that repeat offender turned out to be worse
+than an annoyance — Bitwarden's retry loop crashed `ksecretd` outright via
+file-descriptor exhaustion. Stopping Bitwarden's Flatpak app resolved it
+(confirmed: retry loop stopped, no further crashes, new `ksecretd` instance
+healthy). See "Bitwarden crashes ksecretd" section below.
 
 ## Symptom
 
@@ -285,6 +290,64 @@ whole session — with Bitwarden's Flatpak autostarted, a second or third prompt
 in the same boot is plausible. If this becomes annoying enough to revisit,
 the cheapest lever is disabling Bitwarden's Flatpak autostart (trades away
 auto-launch for fewer cold portal-backend spawns), not a KWallet/PAM change.
+
+## 2026-08-03, second update: Bitwarden crashes `ksecretd` via fd exhaustion
+
+At 21:46:42, both live `ksecretd` instances (PIDs 10392 and 14432 — the same
+two independently-locked instances from the section above) crashed
+simultaneously:
+
+```
+ksecretd[14432]: (process:14432): GLib-ERROR **: Creating pipes for GWakeup: Too many open files
+audit[14432]: ANOM_ABEND ... exe="/usr/bin/ksecretd" sig=5 res=1
+```
+
+GLib treats a failed `pipe()`/`eventfd()` call as fatal and calls `g_error()`,
+which aborts the process (`sig=5`, SIGTRAP) — that's the two KDE crash
+notifications. `coredumpctl` confirms both PIDs, both `EXE=/usr/bin/ksecretd`,
+same timestamp.
+
+This is EMFILE (per-process fd-table exhaustion), not a systemd resource
+limit — `LimitNOFILE` on these transient portal-backend services is
+1,048,576, confirmed via `systemctl --user show
+'dbus-:1.1-org.freedesktop.impl.portal.desktop.kwallet@1.service' -p
+LimitNOFILE`. Hitting that ceiling from a cold-started process within a
+~40-minute session means something was leaking file descriptors fast.
+
+**Cause: Bitwarden's Flatpak app (`com.bitwarden.desktop`, PID 2829,
+autostarted at login).** Its retry loop first flagged in the section above
+was firing continuously, roughly once per second, for the entire session —
+2,020 occurrences logged between the 21:06:40 login and the 21:46:42 crash:
+
+```
+flatpak[2829]: [NAPI] [WARN] zbus::proxy: Failed to populate properties cache
+via GetAll: org.freedesktop.DBus.Error.UnknownMethod: Object does not exist
+at path "/org/freedesktop/portal/desktop/request/1_128/ashpd_..."
+```
+
+Each retry targets a stale portal request object path that no longer exists
+(`UnknownMethod`/`does not exist`), never succeeds, and never stops. The
+exact fd being leaked per iteration wasn't traced (would need `lsof` polling
+`ksecretd`'s fd table live across several iterations to catch it in the act),
+but the correlation is solid: over 2,000 failed retries against the same
+`ksecretd`/portal-backend instances, culminating in exactly the kind of
+crash you'd expect from a per-request resource leak that never gets
+cleaned up on failure.
+
+**Fix applied:** stopped Bitwarden's Flatpak app. Confirmed resolved —
+retry-loop log lines stopped immediately (last one 21:48:56, none after),
+no further crashes (`coredumpctl` clean since), and the next `ksecretd`
+instance spun up healthy (15 open fds, vs. whatever six-figure count the
+crashed ones must have reached).
+
+**Not yet decided:** whether to disable Bitwarden's Flatpak autostart
+permanently, or whether this is fixable/reportable against Bitwarden's
+`ashpd`/zbus usage upstream (the stale request-path pattern suggests it's
+retrying against a portal request that already completed/expired instead of
+giving up or re-requesting a fresh one — a Bitwarden-side bug, not a
+KWallet/`ksecretd` one, even though `ksecretd` is what pays for it). Native
+Bitwarden clients (non-Flatpak) that don't go through the portal wouldn't
+hit this at all, if avoiding Flatpak entirely is preferable to autostart-only.
 
 ## For a bug report
 
