@@ -668,14 +668,87 @@ removes the one actor present in both reproductions. As of this writing
 `~/.config/powerdevilrc` is unchanged (mtime 2026-08-04 21:41) and contains
 no `DimDisplay` section, so the setting has not persisted.
 
+### Verified after reboot (2026-08-05 06:50)
+
+```
+LOBF status: disabled
+Aux-less alpm status: disabled
+DC3 -> DC5 count: 58
+DC5 -> DC6 allowed count: 58
+PSR mode: PSR1 enabled
+```
+
+LOBF is off. The display engine power-gates for the first time on this
+machine. No `xe`/`drm` warnings that boot. Full detail in
+[psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md).
+
+The DSB regression check also passed: 0 errors ~10 minutes into the boot with
+Chrome's GPU processes live, the exact condition that previously produced
+~17,800 per session. PSR1 does not reintroduce the DSB deadlock, so this
+lever is keepable rather than a temporary trade.
+
+### Confound: the same reboot brought kernel 7.1.6, which contains a panel-power fix
+
+The reboot moved 7.1.5-201.fc44 → 7.1.6-201.fc44. Boot args carried over
+correctly, but the boot argument and the driver version changed in one step,
+and 7.1.6 is not neutral for this bug:
+
+```
+drm/i915/mtl+: Enable PPS before PLL
+commit af128ca139d65e64d3e859faac3351870d4a20ea  (Imre Deak, Intel)
+
+  Enabling PPS after a display port's PLL is enabled leads to PLL / DDI
+  BUF timeouts during system resuming after a long (> 45 mins) suspended
+  state, at least on some ARL and MTL laptops...
+
+  Cc: stable@vger.kernel.org # v7.0+
+  Closes: drm/i915 work items 16098, 16064, 16042
+```
+
+It applies here despite being labelled `i915` and `mtl+`. The Intel display
+code is shared between `i915` and `xe` — every debugfs node under the `xe`
+driver on this machine is named `i915_*`, which is the same shared tree — and
+`mtl+` covers Meteor Lake and newer, which includes Panther Lake / Wildcat
+Lake.
+
+PPS is the Panel Power Sequencer. This doc's 2026-08-04 conclusion was that
+the fault must live "at or below the physical eDP link/panel-power sequencing
+itself," because every layer above it came back identical between good and bad
+resumes. This commit is a panel-power-sequencing ordering fix producing
+panel-doesn't-come-back-on-resume symptoms. It is a fully independent
+candidate explanation for any improvement observed from here on.
+
+**Attribution is therefore ambiguous.** If the wedge stops recurring, it is
+either LOBF being disabled or this PPS fix, and nothing observed so far
+separates them.
+
+A cheap A/B exists while 7.1.5-201 is still installed: `grubby` put
+`xe.enable_psr=1` on every boot entry, so booting the *old* kernel isolates
+the variable. Wedge gone on 7.1.5 too means it's the boot arg; wedge back
+means it's the PPS fix. One reboot, no config changes. Worth doing before the
+old kernel gets cleaned up.
+
+Two other Intel display commits in 7.1.6, neither of which explains anything
+here:
+
+| Commit | Relevance |
+|---|---|
+| `drm/i915/backlight: Remove DP_EDP_BACKLIGHT_AUX_ENABLE_CAP check for DPCD backlight` | Ruled out. This panel is on PWM, not AUX/DPCD backlight (`/sys/class/backlight/intel_backlight/type` = `raw`). |
+| `drm/i915/vrr: require valid min/max vfreq for VRR` | Footnote. Div-by-zero hardening for invalid EDID vfreq ranges. This panel reports a valid 30-120 range. VRR feeds the LOBF gate, so not zero relevance, but nothing that changes behavior here. |
+
+The 20 `drm/xe`-labelled commits in 7.1.6 are all GPU-side (VM, PTE, GuC,
+dma-buf, OA). Nothing touching display power. The one that matters wasn't
+filed under `xe`.
+
 ### Remaining questions
 
-- **Confirm `xe.enable_psr=1` actually disables LOBF** after the next reboot
-  (`i915_edp_lobf_info` should read `LOBF status: disabled`), then re-run the
-  reproducer to see whether the wedge rate changes. This is the direct test of
-  the leading theory.
-- Whether PSR1 alone reintroduces the DSB deadlock. If it does, this lever is
-  gone and the only remaining LOBF kill switch requires disabling Secure Boot.
+- Whether PSR1 alone reintroduces the DSB deadlock, once the load test is
+  actually run. If it does, this lever is gone and the only remaining LOBF
+  kill switch requires disabling Secure Boot.
+- Re-run the reproducer (`--fast --allow-idle`, several runs) and compare
+  against the pre-change rate of 2 wedges in ~80 cycles.
+- Run the 7.1.5-vs-7.1.6 A/B above if attribution matters, before the old
+  kernel is cleaned up.
 - Run `--mode race --race-every 3` to test the cold-activation collision that
   the warm-write run missed.
 - `drm.debug=0x1e` (KMS + ATOMIC) has never been enabled. Every capture to

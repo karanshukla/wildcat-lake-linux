@@ -161,12 +161,33 @@ be recorded as a fix for anything. `Never` was deliberately not tried:
 disabling VRR outright is a documented crash-on-disable in this driver (see
 [../known-issues.md](../known-issues.md)).
 
-One incidental correction to the table above: this doc previously listed
-"`xe.enable_psr=0 ...` collaterally killed the vblank-stretching path" as an
-untested candidate for the VRR failure. It is still untested, but note that
-`enable_psr` is an int (`0=disabled, 1=up to PSR1, 2=up to PSR2`), so the
-narrower `xe.enable_psr=1` now in place is itself a partial test of that
-candidate. Re-measure vblank after the next reboot.
+## The PSR candidate in the table above is now partially testable (2026-08-05)
+
+This doc lists "`xe.enable_psr=0 ...` collaterally killed the vblank-stretching
+path" as an untested candidate. Two things changed that make it worth
+re-measuring:
+
+1. `enable_psr` is an int, not a bool (`0=disabled, 1=up to PSR1, 2=up to
+   PSR2`). The arg is now `xe.enable_psr=1`, so PSR1 is active
+   (`i915_psr_status`: `PSR mode: PSR1 enabled`) while PSR2 selective fetch
+   stays off. That's a direct partial test of this candidate without
+   reintroducing the DSB deadlock (confirmed clean under load, see
+   [psr-dsb-deadlock.md](psr-dsb-deadlock.md)).
+2. Kernel 7.1.6 contains `drm/i915/vrr: require valid min/max vfreq for VRR`.
+   Mostly div-by-zero hardening for invalid EDID ranges, and this panel
+   reports a valid 30-120, so it probably changes nothing here. Noted for
+   completeness.
+
+**Blocker on re-measuring: `vblank_watch.py` no longer exists.** It was
+written ad hoc during the 2026-07-26 investigation and never committed to this
+repo or kept anywhere on disk. Any re-test needs it rebuilt first (the
+methodology section above has enough detail to do so: `DRM_IOCTL_WAIT_VBLANK`
+against pipe A on `/dev/dri/card0`, ioctl `0xc018643a`, 24-byte `union
+drm_wait_vblank`). It should be committed to this repo this time.
+
+Second gotcha for a clean comparison: KWin's VRR policy is now `Automatic`,
+not `Always` as it was for the original measurements. Set it back to `Always`
+before re-measuring, or the result isn't comparable to the table above.
 
 ## For a bug report
 

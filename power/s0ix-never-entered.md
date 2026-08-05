@@ -1,6 +1,10 @@
 # Platform never enters S0ix (`substate_residencies` stuck at zero) during `s2idle`
 
-**Status:** Partially fixed, root cause of the remaining gap now isolated.
+**Status:** Partially fixed, root cause of the remaining gap isolated as
+Intel ME (CSE) — but **the measurement is now stale**. Every result below was
+taken while the display engine was also pinned on (DC5/DC6 never entered, a
+second possible blocker nobody checked at the time). That changed 2026-08-05;
+see "New candidate co-blocker" below. Re-measure before quoting any of this.
 PCI runtime-PM was a real, confirmed gap and is now corrected. The platform
 still isn't reaching any S0ix substate. `biopassd`, Chrome/Claude Desktop,
 AC-vs-battery, and `intel_lpmd` not running are all ruled out with direct
@@ -278,6 +282,44 @@ system fully back to its normal state.
 
 Consistent with this repo's general early-silicon (stepping A0) pattern, see
 [../known-issues.md](../known-issues.md).
+
+## New candidate co-blocker, untested (2026-08-05): the display engine was never power-gating either
+
+Every measurement in this doc was taken while the display engine was pinned
+on. Discovered while investigating the panel wedge in
+[s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md):
+
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info    # before 2026-08-05
+DC3CO count: 0
+DC3 -> DC5 count: 0
+DC5 -> DC6 allowed count: 0
+```
+
+Display C-state entry on eDP is gated on PSR, and PSR was force-disabled by
+this machine's own `xe.enable_psr=0` boot arg (from
+[../display/psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md)). So the
+display power wells never went down, ever, on any of the suspend cycles tested
+in this doc.
+
+That matters here because S0ix requires the display power wells to be off.
+The ME/CSE finding above is solid and independently confirmed (it survives
+unloading the entire `mei` stack), but it was never established as the *only*
+blocker — a pinned display engine is a second, entirely separate reason the
+platform could never have reached an S0ix substate, and it was invisible
+because nobody looked at `i915_dmc_info` during that investigation.
+
+As of 2026-08-05 the boot arg is `xe.enable_psr=1` and DC5/DC6 are accruing
+normally (58/58 within a minute of boot). **The S0ix measurement should be
+re-run now**, using the before/after delta method already described above,
+because one of the two candidate blockers has been removed since the last
+measurement. It is entirely possible CSE still pins it at zero and nothing
+changes, but the test is ~2 minutes and the previous result no longer
+describes the current machine.
+
+Note that kernel 7.1.6 landed in the same reboot, so a changed result carries
+the same attribution ambiguity described in
+[s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
 
 ## For a bug report
 

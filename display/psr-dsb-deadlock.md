@@ -106,16 +106,46 @@ Changed to `xe.enable_psr=1` (PSR1 only) as a result. That re-asserts
 `has_psr`, so LOBF never computes, while leaving PSR2 selective fetch — the
 mechanism this doc actually root-caused to the DSB deadlock — disabled.
 
-**Verification needed after the next reboot:**
+**Verified after reboot (2026-08-05 06:50, kernel 7.1.6-201.fc44):**
 
-```bash
-journalctl -k -b 0 | grep -c "DSB 0"                                      # expect 0
-sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info      # expect LOBF status: disabled
-sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info                 # expect nonzero DC5/DC6 counts
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
+LOBF status: disabled
+Aux-less alpm status: disabled
+
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info
+DC3 -> DC5 count: 58
+DC5 -> DC6 allowed count: 58
+
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_psr_status
+PSR mode: PSR1 enabled
+Source PSR/PanelReplay status: IDLE
 ```
 
-If the DSB error count is nonzero under GPU-heavy load, PSR1 triggers the
-deadlock too and the revert command above puts the blunter arg back.
+LOBF is off, which was the point. DC5/DC6 are nonzero for the first time on
+this machine, so the display engine is power-gating, and that also confirms
+PSR1 is genuinely active rather than merely requested. No `xe`/`drm` warnings
+of any kind that boot.
+
+Note on reading `lobf_info`: the "Aux-wake alpm status" line is literally the
+inverse of the aux-less bit in the source, not an independent signal. Only the
+`LOBF status` line means anything on its own.
+
+**DSB regression check: passed under load.**
+
+```
+$ journalctl -k -b 0 | grep -c "DSB 0"
+0
+```
+
+Taken ~10 minutes into the boot with Chrome running and two Chrome GPU
+processes live — the exact condition that previously produced ~17,800 errors
+per 10-minute session. PSR1 does **not** reintroduce the DSB deadlock. The
+deadlock is specific to PSR2 selective fetch, as this doc's root-cause section
+concluded, and the original `xe.enable_psr=0` was over-broad.
+
+Net result of the narrowing: same glitch fix, LOBF no longer enabled, and the
+display engine power-gates again.
 
 ## What the original boot args did NOT disable
 
