@@ -111,6 +111,40 @@ at max.
 | Terminal-open-during-test breaking VRR detection (mpv#10982-class bug) | Confirmed to exist as a general KWin bug, not yet isolated as *the* cause here |
 | `xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0` (from [psr-dsb-deadlock.md](psr-dsb-deadlock.md)) collaterally killed whatever vblank-stretching path the `xe` driver uses for VRR, alongside fixing the DSB deadlock | Plausible, not tested. Re-enabling Panel Replay to check risks reintroducing the DSB deadlock under GPU-heavy load |
 
+## 2026-08-05: policy changed to `Automatic`, and the LOBF hypothesis it was meant to test failed
+
+KWin's VRR policy on eDP-1 was `Always`, i.e. adaptive sync forced on
+unconditionally for a panel where it demonstrably never modulates. Changed to
+`Automatic` (System Settings > Display & Monitor; writes
+`~/.config/kwinoutputconfig.json`), verified via `kscreen-doctor -o`:
+
+```
+Output: 1 eDP-1
+	Vrr: Automatic
+```
+
+The reason for the change was not VRR itself. In `xe`, LOBF (Link Off Between
+Frames, the eDP link-power feature that is the current leading theory for the
+panel wedge in
+[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md))
+has its config computed in the Adaptive-Sync-SDP path, so `Always` was the
+suspected reason LOBF is permanently live.
+
+**The hypothesis is not supported.** Re-read after the change and the
+resulting modeset:
+
+```
+LOBF status: enabled
+Aux-less alpm status: enabled
+```
+
+Unchanged. VRR policy is not what keeps LOBF enabled, or `Automatic` is not a
+small enough setting to drop the AS-SDP path. Left on `Automatic` regardless,
+since nothing is lost by it, but it should not be recorded as a fix for
+anything. `Never` was deliberately not tried: disabling VRR outright is a
+documented crash-on-disable in this driver (see
+[../known-issues.md](../known-issues.md)).
+
 ## For a bug report
 
 - Hardware: Dell XPS 13 DX13260, Wildcat Lake/Panther Lake, GPU device ID

@@ -12,15 +12,27 @@ blank-screen-on-lid-open reproductions with full before/after DRM state. Both
 are indistinguishable from a clean resume at the kernel/DRM level (atomic
 state self-heals within 3s either way, no dmesg errors, PSR/panel config
 unchanged) — the fault lives below what any kernel-space instrumentation can
-see. Leading theory is now a possible link to
-[s0ix-never-entered.md](s0ix-never-entered.md): the platform never reaching
-real S0ix may mean the display power domain never gets a full clean
-power-cycle on any resume, not confirmed. BIOS `Power on LID open` test was
+see. BIOS `Power on LID open` test was
 run and produced a **third failure mode**: a display wedge with the lid held
 open the entire time (no suspend/resume involved at all — traced to KDE's
 idle screen-lock/dim step), which this time did **not** recover with a lid
 nudge, forcing a hard power-off. `Power on LID open` has been reverted back
 to enabled as a result — see "Third incident" below.
+
+**2026-08-05 update: LOBF/ALPM is the new leading theory, and the bug is now
+reproducible on demand.** Built `reproduce-panel-wedge.sh`, which drives the
+panel through the idle-path power transitions on a loop with no lid and no
+suspend involved. Two wedges reproduced in ~80 cycles. Separately, and more
+importantly, found that **eDP link power management was never actually
+disabled**: `LOBF status: enabled` / `Aux-less alpm status: enabled` on the
+live system, despite `xe.enable_psr=0 xe.enable_psr2_sel_fetch=0
+xe.enable_panel_replay=0`. LOBF (Link Off Between Frames) physically powers
+the eDP main link down between frames, in hardware/firmware, below anything
+the DRM atomic state or dmesg can observe — which is exactly the wall every
+previous capture hit. The earlier S0ix/ME shared-power-domain theory is
+demoted: the display engine's own DC-state counters read all-zero for a
+much simpler, local reason (PSR is force-disabled by boot arg, and DC-state
+entry on eDP is gated on it). See "2026-08-05" below.
 
 ## What happened
 
@@ -449,6 +461,186 @@ if it works). Also worth checking KDE's idle-lock/dim timings
 (`powermanagementprofilesrc`) to reproduce this deliberately (idle out the
 session without touching the lid) rather than waiting for it to recur
 naturally.
+
+## 2026-08-05: on-demand reproducer, LOBF/ALPM found still enabled, collision correlation
+
+Three separate findings, in descending order of importance.
+
+### Finding 1: eDP link power management was never actually off
+
+The boot args from [psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md) were
+treated throughout this doc as meaning "link power management is disabled."
+They don't. On the live system, with all three args in `/proc/cmdline`:
+
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
+LOBF status: enabled
+Aux-wake alpm status: disabled
+Aux-less alpm status: enabled
+```
+
+LOBF (Link Off Between Frames) is an eDP 1.5 feature, part of ALPM (Advanced
+Link Power Management), new on Xe3. It is **not** PSR. PSR stops sending
+frames when the image is static and lets the panel self-refresh from its own
+memory; LOBF keeps sending frames and powers the physical link down in the
+gaps between them, hundreds of times a second, in hardware and display
+firmware. Disabling PSR, PSR2 selective fetch, and Panel Replay leaves LOBF
+running.
+
+The active variant here is **aux-less** ALPM: the link is brought back on
+hardcoded timing with no AUX handshake and no confirmation the panel actually
+came back, as opposed to aux-wake, which does handshake.
+
+Why this is now the leading theory:
+
+- A link that fails to come back produces exactly the observed symptom:
+  driver state healthy, atomic commit fine, backlight on, no image.
+- It operates below every layer instrumented so far, which explains the
+  central negative result of the 2026-08-04 captures (DRM atomic state, PSR
+  status, panel timings, and dmesg all byte-identical between good and bad
+  resumes).
+- New feature, new silicon, A0 stepping. Same pattern as everything else in
+  this repo.
+
+Not confirmed. No A/B has been run with LOBF disabled, because the only kill
+switch found is the writable debugfs node `eDP-1/i915_edp_lobf_debug` (no
+`xe.*` module parameter exists for it), and its write semantics haven't been
+read yet.
+
+### Finding 2: the display engine never enters DC5/DC6, and the cause is local
+
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info
+DMC initialized: yes
+version: 2.31
+DC3CO count: 0
+DC3 -> DC5 count: 0
+DC5 -> DC6 allowed count: 0
+```
+
+The 2026-08-04 leading theory was that the display power domain might never
+get a clean power-cycle because the platform never reaches S0ix (see
+[s0ix-never-entered.md](s0ix-never-entered.md)), with "is the eDP power well
+gated by the same mechanism the ME is blocking" named as the missing piece.
+The premise is true and the explanation is simpler than the ME: DC-state
+entry on eDP is gated on PSR, and PSR is force-disabled by this machine's own
+boot arg. The display genuinely never power-gates, for a local, self-inflicted
+reason.
+
+Two consequences. The S0ix link is demoted from leading theory (see the
+status block at the top of this doc). And `xe.enable_dc=0`, an obvious-looking
+lever for a panel-doesn't-come-back bug, is **ruled out as a no-op** on this
+machine: display C-states already never engage.
+
+### Finding 3: on-demand reproduction, and what actually correlates
+
+`reproduce-panel-wedge.sh` (in this directory) drives the panel through
+DPMS off/on cycles on a loop with the lid open and no suspend involved,
+logging each cycle to `/var/tmp/panel-wedge-repro/cycles.log` so the failing
+cycle number survives a forced power-off. It requires no sudo.
+
+It cannot auto-detect the classic symptom — bad and good cycles are identical
+in every software-readable probe, so the detector is a human watching the
+screen — but it does detect the panel dropping to `dpms=Off`/`bl=0` on its
+own, and it emits an audible per-cycle heartbeat so progress is followable
+with the screen dark.
+
+Results:
+
+| Config | Cycles | Collision events | Wedges |
+|---|---|---|---|
+| DPMS off/on, idle inhibited | 13 | 0 | 0 |
+| DPMS off/on, KDE idle ladder live, 8s/6s dwells | 50 | ~3 | 1 |
+| DPMS off/on, KDE idle ladder live, 3s/2s dwells | 30 | 1 | 1 |
+| Concurrent *warm* brightness write on the dpms-on, idle inhibited | 30 | 29 | 0 |
+
+The first run was confounded and is not a baseline: the script generates no
+input, so PowerDevil counted the whole run as idle and ran its full
+escalation underneath the test (dim at cycle 8, an unlogged screen-off at
+cycle 23, a full logind idle suspend at cycle 37). The script now runs under
+`systemd-inhibit --what=idle:sleep:handle-lid-switch` plus
+`kde-inhibit --power --screenSaver` by default, with `--allow-idle` to put
+the collision back deliberately.
+
+**The correlation.** Both wedges happened when a second actor touched panel
+power concurrently with the driver's own transition. The 3s/2s run pins it to
+the second:
+
+| Time | Event |
+|---|---|
+| 06:14:25 | cycle 16 begins, script issues `kscreen-doctor --dpms off` |
+| **06:14:28** | script issues `--dpms on` (3s dwell) **and** `dbus-:1.3-org.kde.powerdevil.backlighthelper@10.service` starts, same second |
+| 06:14:30 | cycle 16 post-probe: `dpms=On bl=23041`; wedge observed by eye, recovered on a later cycle |
+
+Note the denominator that matters. The natural runs are 2 for 2 on *collision
+events*, not 2 for 80 on cycles. Collisions are rare only because KDE's idle
+timers fire slowly.
+
+**Ruled out: a warm concurrent brightness write is not sufficient.** A `race`
+mode was added to fire a PowerDevil `setBrightness` call concurrently with
+every dpms-on. 29 such writes, zero wedges. But that run did not test the
+mechanism that correlated: `backlighthelper` is a D-Bus-activated privileged
+helper that idles out after ~12s, and a write every 7s kept it warm for the
+whole run. Exactly one activation is logged for those 30 cycles
+(`backlighthelper@13` at 06:19:31), against a cold activation — systemd unit
+start, D-Bus activation, process spawn, then the sysfs write — in the event
+that actually correlated. `--race-every N` now spaces the writes past the
+idle-out to force the cold path; that run hasn't been done.
+
+A second difference can't be faked with a D-Bus call at all: PowerDevil
+deciding it is idle is a policy state transition, and a raw `setBrightness`
+isn't. Whatever else that transition does is unaccounted for.
+
+### Mitigations applied
+
+Neither is a root-cause fix. Both remove an ingredient.
+
+**1. Adaptive Sync set from `Always` to `Automatic` on eDP-1** (System
+Settings > Display & Monitor; writes `~/.config/kwinoutputconfig.json`).
+Rationale: in `xe`, LOBF's config is computed in the Adaptive-Sync-SDP path,
+so forcing VRR on unconditionally was the suspected reason LOBF is always
+live. Costs nothing real, since VRR never actually modulates on this panel
+(see [vrr-not-engaging.md](../display/vrr-not-engaging.md)). `Automatic`
+rather than `Never` deliberately, because disabling VRR outright is a
+documented crash-on-disable in this driver (see
+[known-issues.md](../known-issues.md)).
+
+**Result: LOBF stayed enabled.** Re-read after the change and after the
+resulting modeset, `i915_edp_lobf_info` still reports `LOBF status: enabled` /
+`Aux-less alpm status: enabled`. So the VRR-policy-keeps-LOBF-alive
+hypothesis is **not supported**. The setting was left on `Automatic` anyway
+(nothing is lost), but it does not do what it was applied to do.
+
+**2. Recommended, not yet applied: turn off KDE's screen dimming.** This
+removes the one actor present in both reproductions. As of this writing
+`~/.config/powerdevilrc` is unchanged (mtime 2026-08-04 21:41) and contains
+no `DimDisplay` section, so the setting has not persisted.
+
+### Remaining questions
+
+- Read the write semantics of `eDP-1/i915_edp_lobf_debug` and, if it takes a
+  disable, apply it at boot via a small systemd unit. This is the direct test
+  of the leading theory and it hasn't been run. Requires a sudo read from a
+  real terminal.
+- Run `--mode race --race-every 3` to test the cold-activation collision that
+  the warm-write run missed.
+- `drm.debug=0x1e` (KMS + ATOMIC) has never been enabled. Every capture to
+  date is a snapshot; a sequencing fault is invisible in snapshots by
+  construction. The 2026-08-04 conclusion that kernel-space instrumentation
+  had "hit its ceiling" was premature on this point.
+- Sink-side DPCD has never been read. All captures are driver-side. Reading
+  sink power state (DPCD 0x600) and lane/link status (0x202-0x205) over
+  `/dev/drm_dp_aux0` during a wedge would separate "driver thinks the link is
+  up, sink is in D3" from "both agree, backlight is the problem".
+- Whether the PSR boot args themselves are a contributing variable. All three
+  failure modes in this doc occurred with PSR, PSR2 selective fetch, and
+  Panel Replay force-disabled, and that has never been treated as a variable.
+  Leaving Panel Replay off while LOBF runs is plausibly a combination Intel
+  never validated.
+- Whether Magic SysRq recovers this wedge. Still untested (carried over from
+  the third incident).
+- `lvfs-testing` is disabled in `fwupd`, and the last documented firmware
+  check is 2026-07-25. Dell ships XPS BIOS/EC/ME betas there.
 
 ## Mitigations applied (2026-08-03 addition)
 

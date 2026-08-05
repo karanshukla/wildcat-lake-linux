@@ -24,11 +24,11 @@ timeline as of writing (2026-07-25).
 
 | Area | Issue | Status | Doc |
 |---|---|---|---|
-| Display | PSR2/DSB deadlock causing glitches under GPU load | Worked around (kernel boot args) | [display/psr-dsb-deadlock.md](display/psr-dsb-deadlock.md) |
+| Display | PSR2/DSB deadlock causing glitches under GPU load | Worked around (kernel boot args). Note: these args do *not* disable LOBF/ALPM link power management, and they gate the display engine out of DC5/DC6 entirely | [display/psr-dsb-deadlock.md](display/psr-dsb-deadlock.md) |
 | Display | VRR/adaptive sync crash-on-disable in `xe` driver | Unresolved, upstream WIP | [known-issues.md](known-issues.md) |
-| Display | VRR reports capable+enabled but panel refresh never modulates (pinned 120Hz idle and during video) | Unresolved, confounded by a known KWin bug, root cause not isolated | [display/vrr-not-engaging.md](display/vrr-not-engaging.md) |
+| Display | VRR reports capable+enabled but panel refresh never modulates (pinned 120Hz idle and during video) | Unresolved, confounded by a known KWin bug, root cause not isolated. Policy changed `Always` → `Automatic` 2026-08-05 to test a LOBF link (hypothesis not supported) | [display/vrr-not-engaging.md](display/vrr-not-engaging.md) |
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
-| Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang | Mitigated (behavioral + diagnostics), not fixed | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
+| Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang (broader: any eDP panel power-cycle can wedge, lid and suspend not required) | Mitigated (behavioral + diagnostics), not fixed. Reproducible on demand as of 2026-08-05 (`power/reproduce-panel-wedge.sh`). Leading theory now LOBF/aux-less ALPM, which the PSR boot args never disabled | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
 | Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); root cause of the remaining gap confirmed as Intel ME (CSE) firmware, independent of the host `mei` driver; needs a Dell/Intel firmware update | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
 | Power | Battery charge-limit sysfs attributes exist but every read/write fails (ENXIO/EIO) | Root cause confirmed (BIOS `Battery Charge Configuration` = `ExpressCharge™`, not `Custom`); accepted as-is, not pursued | [power/battery-charge-limit.md](power/battery-charge-limit.md) |
 | Power | Power button bypasses KDE's "show logout screen" setting, powers off directly | Unresolved, not root-caused, one occurrence so far | [power/powerkey-bypasses-kde-poweroff.md](power/powerkey-bypasses-kde-poweroff.md) |
@@ -65,7 +65,8 @@ desktop/                   raw KDE panel/widget config snapshot (restore point, 
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend (superseded by AuthFace)
 face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, screen-spoof physics finding
 disk-encryption/           TPM2 LUKS auto-unlock
-power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang;
+power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang
+                           (+ reproduce-panel-wedge.sh, on-demand reproducer);
                            S0ix substates never entered; battery charge-limit BIOS setting;
                            power button bypassing KDE's logout-screen setting
 shell/                     bash-completion setup for gaze/claude/bat; ble.sh tried & reverted

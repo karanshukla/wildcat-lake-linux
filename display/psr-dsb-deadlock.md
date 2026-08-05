@@ -67,6 +67,44 @@ during idle/static-screen periods (reading, typing pauses) — rough estimate
 workday. Not precisely measured (no clean before/after power-draw baseline was
 captured). No stability downside observed; fully reversible.
 
+## These boot args do NOT disable all eDP link power management (2026-08-05)
+
+Worth stating explicitly, because this doc's args were treated elsewhere in
+the repo as meaning "link power management is off." They aren't. With all
+three set:
+
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
+LOBF status: enabled
+Aux-wake alpm status: disabled
+Aux-less alpm status: enabled
+```
+
+LOBF (Link Off Between Frames, eDP 1.5, part of ALPM) powers the physical eDP
+link down between frames rather than stopping frames the way PSR does. It's a
+separate feature with a separate mechanism and no `xe.*` module parameter; the
+only kill switch found is the writable debugfs node
+`eDP-1/i915_edp_lobf_debug`. It is currently the leading theory for the panel
+wedge in
+[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md).
+
+## Power cost of these args, now with a mechanism (2026-08-05)
+
+The trade-off estimate below (~0.5-1W, never measured) now has a confirmed
+mechanism behind it:
+
+```
+$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info
+DC3CO count: 0
+DC3 -> DC5 count: 0
+DC5 -> DC6 allowed count: 0
+```
+
+Display C-state entry on eDP is gated on PSR, so disabling PSR means the
+display engine never power-gates at all, on this machine, ever. That's the
+real cost of this workaround. It also means `xe.enable_dc=0` is a no-op here,
+which is useful to know before reaching for it as a display-bug lever.
+
 ## Fallback
 
 Kernel `6.19.10-300.fc44` was left installed alongside `7.1.4` — bootable from GRUB

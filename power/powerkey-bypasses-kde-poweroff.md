@@ -68,6 +68,24 @@ session-state fragility building up under repeated suspend/crash/reboot
 cycling) or are coincidentally similar-looking separate bugs isn't
 established — flagging the pattern, not claiming the link.
 
+**Second instance of the same class, captured incidentally (2026-08-05).**
+During a panel-wedge stress run (see
+[s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md)), a logind
+idle-suspend at 06:14 fired with KWin failing to take its own delay
+inhibitor:
+
+```
+kwin_wayland[2108]: Failed to delay sleep: The operation inhibition has been
+requested for is already running
+```
+
+Logged twice, at 05:59:24, immediately before `systemd-logind: The system
+will suspend now!`. Different component (KWin, not PowerDevil) and different
+inhibitor type (`delay`, not `block`), so it isn't the same bug. But it's a
+second concrete case on this machine of a KDE component failing to hold an
+inhibitor it is supposed to hold, around a power-management transition. Worth
+recording as part of the pattern rather than as a cause.
+
 **Ruled out:** a boot parameter suggestion found online
 (`acpi_backlight=native`) does not apply here — that changes which ACPI
 interface controls display backlight brightness, unrelated to `logind` power-
