@@ -37,6 +37,14 @@ sudo cat "$DBG/eDP-1/i915_panel_timings" > "$OUT/edp1-panel-timings.txt" 2>&1
 # short/long HPD pulses around resume?
 sudo cat "$DBG/i915_hpd_storm_ctl" > "$OUT/hpd-storm-ctl.txt" 2>&1
 
+# Display power well use-counts (PW_A/DC_off/etc) — 2026-08-04: pmc_core's
+# display-related requirement counters (DISP_SHIM_VNN, DDI_PLL, D2D_DISP_DDI
+# QACTIVE) showed zero movement across a real confirmed s2idle sleep while
+# CSE's moved substantially in the same window, arguing against a shared
+# PMC-level gating mechanism. This is a different, driver-internal signal
+# (live use-counts, not historical accrual) worth checking too.
+sudo cat "$DBG/i915_power_domain_info" > "$OUT/power-domain-info.txt" 2>&1
+
 # S0ix substate snapshot — s0ix-never-entered.md already root-caused the
 # platform never reaching S0ix (ME/CSE firmware never releases VNN), but
 # capturing it here too in case a bad lid-open resume ever correlates with

@@ -107,6 +107,19 @@ misconfiguration — a candidate local workaround (forcing early
 Accepted as a known annoyance; no local fix pursued. Full investigation:
 [face-unlock-authface/kwallet-not-auto-unlocking.md](face-unlock-authface/kwallet-not-auto-unlocking.md).
 
+## Power button bypasses KDE, powers off directly
+
+KDE is set to show a logout screen on power-button press; on 2026-08-04 the
+button instead powered the machine off immediately, no prompt. `logind`'s
+own native `poweroff` handler ran directly instead of deferring to KDE.
+PowerDevil currently holds the correct `block`-mode inhibitor for this and
+didn't crash in the affected boot, so the inhibitor mechanism looks correctly
+configured but wasn't honored (or lapsed) at the moment of the incident — not
+reproduced on demand yet. Possibly the same general class of issue as the
+lid-switch/suspend polkit denials below (PowerDevil/`logind` session-state
+fragility), not confirmed. Full investigation:
+[power/powerkey-bypasses-kde-poweroff.md](power/powerkey-bypasses-kde-poweroff.md).
+
 ## Touchpad — tap-to-click misfires while typing (keyd interaction)
 
 Tap-to-click cursor jumps and misfired clicks while typing, on a touchpad with
