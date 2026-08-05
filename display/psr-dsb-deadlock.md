@@ -83,126 +83,80 @@ during idle/static-screen periods (reading, typing pauses) — rough estimate
 workday. Not precisely measured (no clean before/after power-draw baseline was
 captured). No stability downside observed; fully reversible.
 
-## Narrowed to PSR1: the original args turned LOBF *on* (2026-08-05)
+## Narrowed to PSR1 (2026-08-05): the original arg turned LOBF on
 
-The original `xe.enable_psr=0` had a side effect nobody noticed for two
-weeks: it enabled a *different* eDP link-power feature. From
-`drivers/gpu/drm/i915/display/intel_alpm.c`, in
-`intel_alpm_lobf_compute_config()`:
+The original `xe.enable_psr=0` had a side effect nobody noticed for two weeks:
+it enabled a *different* eDP link-power feature. From
+`drivers/gpu/drm/i915/display/intel_alpm.c`:
 
 ```c
 if (crtc_state->has_psr)
 	return;
 ```
 
-LOBF (Link Off Between Frames) only engages when PSR is **not** active. So
-disabling PSR entirely is precisely what allowed LOBF to run on this machine.
-LOBF is now the leading theory for the panel wedge in
-[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md),
-which makes this workaround a candidate contributor to that bug rather than
-unrelated background.
+LOBF (Link Off Between Frames, eDP 1.5, part of ALPM) only computes when PSR
+is inactive, so disabling PSR entirely is what allowed it to run. LOBF powers
+the physical eDP link down between frames rather than stopping frames the way
+PSR does, and it is now the leading theory for the panel wedge in
+[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md).
+That makes this workaround a candidate contributor to that bug rather than the
+unrelated background it had been treated as.
 
-Changed to `xe.enable_psr=1` (PSR1 only) as a result. That re-asserts
-`has_psr`, so LOBF never computes, while leaving PSR2 selective fetch — the
-mechanism this doc actually root-caused to the DSB deadlock — disabled.
-
-**Verified after reboot (2026-08-05 06:50, kernel 7.1.6-201.fc44):**
-
-```
-$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
-LOBF status: disabled
-Aux-less alpm status: disabled
-
-$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info
-DC3 -> DC5 count: 58
-DC5 -> DC6 allowed count: 58
-
-$ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_psr_status
-PSR mode: PSR1 enabled
-Source PSR/PanelReplay status: IDLE
-```
-
-LOBF is off, which was the point. DC5/DC6 are nonzero for the first time on
-this machine, so the display engine is power-gating, and that also confirms
-PSR1 is genuinely active rather than merely requested. No `xe`/`drm` warnings
-of any kind that boot.
-
-Note on reading `lobf_info`: the "Aux-wake alpm status" line is literally the
-inverse of the aux-less bit in the source, not an independent signal. Only the
-`LOBF status` line means anything on its own.
-
-**DSB regression check: passed under load.**
-
-```
-$ journalctl -k -b 0 | grep -c "DSB 0"
-0
-```
-
-Taken ~10 minutes into the boot with Chrome running and two Chrome GPU
-processes live — the exact condition that previously produced ~17,800 errors
-per 10-minute session. PSR1 does **not** reintroduce the DSB deadlock. The
-deadlock is specific to PSR2 selective fetch, as this doc's root-cause section
-concluded, and the original `xe.enable_psr=0` was over-broad.
-
-Net result of the narrowing: same glitch fix, LOBF no longer enabled, and the
-display engine power-gates again.
-
-## What the original boot args did NOT disable
-
-Worth stating explicitly, because this doc's args were treated elsewhere in
-the repo as meaning "link power management is off." They weren't. With all
-three of the *original* args set:
+With all three of the original args set:
 
 ```
 $ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
 LOBF status: enabled
-Aux-wake alpm status: disabled
 Aux-less alpm status: enabled
-```
 
-LOBF (Link Off Between Frames, eDP 1.5, part of ALPM) powers the physical eDP
-link down between frames rather than stopping frames the way PSR does. It's a
-separate feature with a separate mechanism and no `xe.*` module parameter.
-
-The debugfs node `eDP-1/i915_edp_lobf_debug` (write non-zero to set
-`alpm.lobf_disable_debug`) looks like a direct kill switch but **is unusable
-on this machine**:
-
-```
-$ echo 1 | sudo tee .../eDP-1/i915_edp_lobf_debug
-tee: '.../i915_edp_lobf_debug': Operation not permitted
-
-$ cat /sys/kernel/security/lockdown
-none [integrity] confidentiality
-$ mokutil --sb-state
-SecureBoot enabled
-```
-
-Secure Boot puts the kernel in lockdown integrity mode, which blocks
-`DEFINE_SIMPLE_ATTRIBUTE`-backed debugfs files for both read and write. Not a
-permissions issue; `sudo` doesn't help. Disabling Secure Boot would unblock it
-but breaks TPM2-sealed LUKS auto-unlock (PCR 7 covers Secure Boot state, see
-[../disk-encryption/tpm2-luks.md](../disk-encryption/tpm2-luks.md)) and the
-MOK-enrolled DKMS modules. Not worth it for a test, which is why the PSR1
-route above was taken instead.
-
-## Power cost of the original args, with a mechanism (2026-08-05)
-
-The trade-off estimate below (~0.5-1W, never measured) now has a confirmed
-mechanism behind it. This is measured with the original `xe.enable_psr=0`;
-the PSR1 change above should reverse it:
-
-```
 $ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info
 DC3CO count: 0
 DC3 -> DC5 count: 0
 DC5 -> DC6 allowed count: 0
 ```
 
-Display C-state entry on eDP is gated on PSR, so disabling PSR means the
-display engine never power-gates at all, on this machine, ever. That's the
-real cost of this workaround. It also means `xe.enable_dc=0` is a no-op here,
-which is useful to know before reaching for it as a display-bug lever.
+Two problems in one. LOBF was running, and the display engine was never
+power-gating at all, since DC-state entry on eDP is gated on PSR. The second
+is the mechanism behind this doc's previously-unmeasured ~0.5-1W trade-off
+estimate, and it also means `xe.enable_dc=0` is a no-op on this machine.
+
+### After changing to `xe.enable_psr=1`
+
+| | Before | After |
+|---|---|---|
+| `LOBF status` | enabled | **disabled** |
+| `DC5 -> DC6 allowed count` | 0 | **58** |
+| `PSR mode` | (disabled) | PSR1 enabled |
+| DSB errors under GPU load | 0 | **0** |
+
+The DSB check was taken ~10 minutes into the boot with Chrome's GPU processes
+live, the condition that previously produced ~17,800 errors per session. PSR1
+does not reintroduce the deadlock, so it is specific to PSR2 selective fetch
+and the original arg was over-broad.
+
+Net: same glitch fix, LOBF no longer enabled, display power-gating restored.
+
+Note on reading `lobf_info`: the "Aux-wake alpm status" line is literally the
+inverse of the aux-less bit in the source, not an independent signal. Only the
+`LOBF status` line means anything on its own.
+
+### The direct LOBF kill switch is unusable here
+
+`eDP-1/i915_edp_lobf_debug` (write non-zero to set `alpm.lobf_disable_debug`)
+looks like the obvious lever, but:
+
+```
+$ echo 1 | sudo tee .../eDP-1/i915_edp_lobf_debug
+tee: '.../i915_edp_lobf_debug': Operation not permitted
+$ cat /sys/kernel/security/lockdown
+none [integrity] confidentiality
+```
+
+Secure Boot forces lockdown integrity mode, which blocks
+`DEFINE_SIMPLE_ATTRIBUTE` debugfs files for both read and write. Disabling
+Secure Boot would unblock it but breaks TPM2-sealed LUKS auto-unlock (PCR 7,
+see [../disk-encryption/tpm2-luks.md](../disk-encryption/tpm2-luks.md)) and
+the MOK-enrolled DKMS modules. Hence the PSR1 route instead.
 
 ## Fallback
 

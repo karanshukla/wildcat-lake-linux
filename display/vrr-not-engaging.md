@@ -111,36 +111,20 @@ at max.
 | Terminal-open-during-test breaking VRR detection (mpv#10982-class bug) | Confirmed to exist as a general KWin bug, not yet isolated as *the* cause here |
 | `xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0` (from [psr-dsb-deadlock.md](psr-dsb-deadlock.md)) collaterally killed whatever vblank-stretching path the `xe` driver uses for VRR, alongside fixing the DSB deadlock | Plausible, not tested. Re-enabling Panel Replay to check risks reintroducing the DSB deadlock under GPU-heavy load |
 
-## 2026-08-05: policy changed to `Automatic`, and the LOBF hypothesis it was meant to test failed
+## 2026-08-05: policy changed to `Automatic`; the LOBF hypothesis it tested failed
 
-KWin's VRR policy on eDP-1 was `Always`, i.e. adaptive sync forced on
+KWin's VRR policy on eDP-1 was `Always`, forcing adaptive sync on
 unconditionally for a panel where it demonstrably never modulates. Changed to
-`Automatic` (System Settings > Display & Monitor; writes
-`~/.config/kwinoutputconfig.json`), verified via `kscreen-doctor -o`:
+`Automatic` (System Settings > Display & Monitor, writes
+`~/.config/kwinoutputconfig.json`).
 
-```
-Output: 1 eDP-1
-	Vrr: Automatic
-```
+The reason was not VRR itself. LOBF, the eDP link-power feature that is the
+leading theory for the panel wedge in
+[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md),
+has a VRR-related gate, so `Always` was the suspected reason it stayed live.
 
-The reason for the change was not VRR itself. In `xe`, LOBF (Link Off Between
-Frames, the eDP link-power feature that is the current leading theory for the
-panel wedge in
-[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md))
-has its config computed in the Adaptive-Sync-SDP path, so `Always` was the
-suspected reason LOBF is permanently live.
-
-**The hypothesis is not supported.** Re-read after the change and the
-resulting modeset:
-
-```
-LOBF status: enabled
-Aux-less alpm status: enabled
-```
-
-Unchanged, and the driver source says why. From
-`drivers/gpu/drm/i915/display/intel_alpm.c`, the VRR-related gate in
-`intel_alpm_lobf_compute_config()` is:
+**Not supported.** LOBF was unchanged after the modeset, and the source says
+why:
 
 ```c
 if (!intel_vrr_always_use_vrr_tg(display) || !intel_vrr_is_fixed_rr(crtc_state))
@@ -148,46 +132,31 @@ if (!intel_vrr_always_use_vrr_tg(display) || !intel_vrr_is_fixed_rr(crtc_state))
 ```
 
 `intel_vrr_always_use_vrr_tg()` is a platform property of `DISPLAY_VER >= 20`
-(on Xe3 the VRR timing generator is always used), not the compositor's
-adaptive-sync policy. No KWin setting can affect it. The hypothesis was wrong
-about the mechanism, not just the magnitude.
+(on Xe3 the VRR timing generator is always used), not compositor policy. What
+actually gates LOBF is PSR, see [psr-dsb-deadlock.md](psr-dsb-deadlock.md).
 
-What actually gates LOBF here is PSR: `if (crtc_state->has_psr) return;`. See
-[psr-dsb-deadlock.md](psr-dsb-deadlock.md), where `xe.enable_psr=0` has now
-been narrowed to `xe.enable_psr=1` for exactly this reason.
-
-Left on `Automatic` regardless, since nothing is lost by it, but it should not
-be recorded as a fix for anything. `Never` was deliberately not tried:
-disabling VRR outright is a documented crash-on-disable in this driver (see
+Left on `Automatic` since nothing is lost by it, but it is not a fix for
+anything. `Never` was deliberately not tried: disabling VRR outright is a
+documented crash-on-disable in this driver (see
 [../known-issues.md](../known-issues.md)).
 
-## The PSR candidate in the table above is now partially testable (2026-08-05)
+### Re-measuring is now worthwhile, but blocked
 
-This doc lists "`xe.enable_psr=0 ...` collaterally killed the vblank-stretching
-path" as an untested candidate. Two things changed that make it worth
-re-measuring:
+The candidate table above lists "`xe.enable_psr=0` collaterally killed the
+vblank-stretching path" as untested. The arg is now `xe.enable_psr=1`, so PSR1
+is active while PSR2 selective fetch stays off, which makes this a direct
+partial test of that candidate.
 
-1. `enable_psr` is an int, not a bool (`0=disabled, 1=up to PSR1, 2=up to
-   PSR2`). The arg is now `xe.enable_psr=1`, so PSR1 is active
-   (`i915_psr_status`: `PSR mode: PSR1 enabled`) while PSR2 selective fetch
-   stays off. That's a direct partial test of this candidate without
-   reintroducing the DSB deadlock (confirmed clean under load, see
-   [psr-dsb-deadlock.md](psr-dsb-deadlock.md)).
-2. Kernel 7.1.6 contains `drm/i915/vrr: require valid min/max vfreq for VRR`.
-   Mostly div-by-zero hardening for invalid EDID ranges, and this panel
-   reports a valid 30-120, so it probably changes nothing here. Noted for
-   completeness.
+Blocker: **`vblank_watch.py` no longer exists.** It was written ad hoc during
+the 2026-07-26 investigation and never committed to this repo. Rebuild it from
+the methodology section above (`DRM_IOCTL_WAIT_VBLANK` on pipe A of
+`/dev/dri/card0`, ioctl `0xc018643a`, 24-byte `union drm_wait_vblank`) and
+commit it this time. Also set the VRR policy back to `Always` first, or the
+result isn't comparable to the measurements above.
 
-**Blocker on re-measuring: `vblank_watch.py` no longer exists.** It was
-written ad hoc during the 2026-07-26 investigation and never committed to this
-repo or kept anywhere on disk. Any re-test needs it rebuilt first (the
-methodology section above has enough detail to do so: `DRM_IOCTL_WAIT_VBLANK`
-against pipe A on `/dev/dri/card0`, ioctl `0xc018643a`, 24-byte `union
-drm_wait_vblank`). It should be committed to this repo this time.
-
-Second gotcha for a clean comparison: KWin's VRR policy is now `Automatic`,
-not `Always` as it was for the original measurements. Set it back to `Always`
-before re-measuring, or the result isn't comparable to the table above.
+Kernel 7.1.6 carries `drm/i915/vrr: require valid min/max vfreq for VRR`, but
+that's div-by-zero hardening for invalid EDID ranges and this panel reports a
+valid 30-120.
 
 ## For a bug report
 

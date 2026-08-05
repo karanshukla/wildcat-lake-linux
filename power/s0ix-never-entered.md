@@ -399,6 +399,11 @@ S0i2/S0i3.
   this blocker regardless of platform-check support.
 - Whether Dell ships a BIOS/ME firmware update that changes this behavior.
   This is now confirmed as the only remaining lever, nothing left to try from
-  the OS side. Otherwise, another entry for the early-silicon pile like
+  the OS side. **Checked 2026-08-05 on both `lvfs` and `lvfs-testing`:
+  `No updates available`, System Firmware listed under "no available firmware
+  updates" on both channels.** Nothing published to try, beta or otherwise.
+  Re-check periodically; `lvfs-testing` was disabled again afterward so a
+  routine `fwupdmgr update` can't pull a beta BIOS unintentionally (that would
+  break TPM2 LUKS auto-unlock and is typically not downgradable). Otherwise, another entry for the early-silicon pile like
   [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md) and
   [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
