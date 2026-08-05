@@ -29,7 +29,7 @@ timeline as of writing (2026-07-25).
 | Display | VRR reports capable+enabled but panel refresh never modulates (pinned 120Hz idle and during video) | Unresolved, confounded by a known KWin bug, root cause not isolated. Policy changed `Always` → `Automatic` 2026-08-05 to test a LOBF link (hypothesis not supported) | [display/vrr-not-engaging.md](display/vrr-not-engaging.md) |
 | Power | Forcing S3 (`deep`) sleep hangs unresumably (firmware, not kernel) | Reverted to `s2idle` default | [power/s3-deep-sleep-hang.md](power/s3-deep-sleep-hang.md) |
 | Power | Rapid lid-cycling on `s2idle` resume causes an unresumable hang (broader: any eDP panel power-cycle can wedge, lid and suspend not required) | Mitigated (behavioral + diagnostics), not fixed. Reproducible on demand as of 2026-08-05 (`power/reproduce-panel-wedge.sh`). Leading theory now LOBF/aux-less ALPM, which the PSR boot args never disabled and in fact enabled. Candidate fix (`xe.enable_psr=1`) applied and confirmed to disable LOBF; wedge rate not yet re-measured, and kernel 7.1.6 landed in the same reboot with a panel-power fix (`drm/i915/mtl+: Enable PPS before PLL`), so attribution is ambiguous | [power/s2idle-rapid-resume-hang.md](power/s2idle-rapid-resume-hang.md) |
-| Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); root cause of the remaining gap confirmed as Intel ME (CSE) firmware, independent of the host `mei` driver. **Measurement now stale**: it was taken while the display engine was also pinned on (DC5/DC6 never entered), a second possible blocker removed 2026-08-05 — re-measure | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
+| Power | Platform never enters any S0ix substate during `s2idle` (0 residency) | Partially fixed (PCI runtime-PM udev rule); root cause of the remaining gap confirmed as Intel ME (CSE) firmware, independent of the host `mei` driver; re-confirmed 2026-08-05 on kernel 7.1.6 with the display engine power-gating (candidate co-blocker ruled out); needs a Dell/Intel firmware update | [power/s0ix-never-entered.md](power/s0ix-never-entered.md) |
 | Power | Battery charge-limit sysfs attributes exist but every read/write fails (ENXIO/EIO) | Root cause confirmed (BIOS `Battery Charge Configuration` = `ExpressCharge™`, not `Custom`); accepted as-is, not pursued | [power/battery-charge-limit.md](power/battery-charge-limit.md) |
 | Power | Power button bypasses KDE's "show logout screen" setting, powers off directly | Unresolved, not root-caused, one occurrence so far | [power/powerkey-bypasses-kde-poweroff.md](power/powerkey-bypasses-kde-poweroff.md) |
 | Camera | kamoso negotiates raw YUYV @ 1080p, capped at 5fps (Chrome unaffected) | Workaround (avoid kamoso, or cap its resolution); app itself unpatched | [camera/kamoso-raw-format-5fps.md](camera/kamoso-raw-format-5fps.md) |
@@ -67,7 +67,8 @@ face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, scr
 disk-encryption/           TPM2 LUKS auto-unlock
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang
                            (+ reproduce-panel-wedge.sh, on-demand reproducer);
-                           S0ix substates never entered; battery charge-limit BIOS setting;
+                           S0ix substates never entered (+ measure-s0ix.sh, delta harness);
+                           battery charge-limit BIOS setting;
                            power button bypassing KDE's logout-screen setting
 shell/                     bash-completion setup for gaze/claude/bat; ble.sh tried & reverted
 known-issues.md            everything still open/unresolved

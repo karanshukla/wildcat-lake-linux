@@ -1,10 +1,13 @@
 # Platform never enters S0ix (`substate_residencies` stuck at zero) during `s2idle`
 
-**Status:** Partially fixed, root cause of the remaining gap isolated as
-Intel ME (CSE) — but **the measurement is now stale**. Every result below was
-taken while the display engine was also pinned on (DC5/DC6 never entered, a
-second possible blocker nobody checked at the time). That changed 2026-08-05;
-see "New candidate co-blocker" below. Re-measure before quoting any of this.
+**Status:** Partially fixed, root cause of the remaining gap isolated and now
+re-confirmed. PCI runtime-PM was a real, confirmed gap and is corrected. The
+platform still isn't reaching any S0ix substate. The binding blocker is Intel
+ME (CSE), confirmed independent of the host `mei` driver. Re-measured
+2026-08-05 on kernel 7.1.6 with the display engine power-gating for the first
+time (a candidate co-blocker, now ruled out) — CSE still asserts at the same
+rate and residency is still zero. Not fixable from Linux at all; this needs a
+Dell/Intel firmware update.
 PCI runtime-PM was a real, confirmed gap and is now corrected. The platform
 still isn't reaching any S0ix substate. `biopassd`, Chrome/Claude Desktop,
 AC-vs-battery, and `intel_lpmd` not running are all ruled out with direct
@@ -309,21 +312,50 @@ blocker — a pinned display engine is a second, entirely separate reason the
 platform could never have reached an S0ix substate, and it was invisible
 because nobody looked at `i915_dmc_info` during that investigation.
 
-As of 2026-08-05 the boot arg is `xe.enable_psr=1` and DC5/DC6 are accruing
-normally (58/58 within a minute of boot). **The S0ix measurement should be
-re-run now**, using the before/after delta method already described above,
-because one of the two candidate blockers has been removed since the last
-measurement. It is entirely possible CSE still pins it at zero and nothing
-changes, but the test is ~2 minutes and the previous result no longer
-describes the current machine.
+### Tested 2026-08-05, and ruled out
 
-Note that kernel 7.1.6 landed in the same reboot, so a changed result carries
-the same attribution ambiguity described in
-[s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
+Re-measured with `xe.enable_psr=1` in place, DC5/DC6 accruing normally, and on
+kernel 7.1.6-201. 90s sleep through logind, via `measure-s0ix.sh` in this
+directory:
+
+```
+Residency AFTER:
+  S0i2.0  0
+  S0i2.1  0
+  S0i2.2  0
+```
+
+Still zero. Removing the display blocker changed nothing.
+
+| Element | Delta over ~90s (2026-07) | Delta over ~90s (2026-08-05) | Read |
+|---|---|---|---|
+| free-running clocks (`XTAL_AGGR`, `SOC_PLL`, `SMT`/`SMS`, `AON2/3/5`, `CLINK`, `FILTER_PLL`) | +2,942,943 | +2,912,188 | Reference baseline, not blockers |
+| `CSE_VNN_REQ_STS` / `CSE_PGD0_PG_STS` | +65,332 | **+61,338** | Unchanged. Still asserting through the whole sleep |
+| `CSMERTC_VNN_REQ_STS` | +65,298 | +61,304 | Tracks CSE, expected (ME's RTC subcomponent) |
+| `ISH_VNN_REQ_STS` | 0 | 0 | Still ruled out |
+| `DISP_SHIM_VNN_REQ_STS`, `DDI_PLL_OFF_STS`, `D2D_DISP_DDI_QACTIVE_REQ_STS` | 0 | **0** | Display asserts nothing during sleep, before or after the change |
+
+The display elements read zero-delta both before and after the display engine
+started power-gating, which is about as direct as this gets: the display was
+never participating in the S0ix blockage in either direction. The hypothesis
+above is closed.
+
+Two incidental details from this run, not previously recorded:
+
+- `AON4_OFF_STS` moved +61,338, exactly matching CSE rather than the
+  free-running AON2/3/5 group. It's presumably in the ME's always-on domain.
+- `SE_TCSS_PLL_OFF_STS` moved +61,264, also tracking CSE closely.
+
+**Net effect: this strengthens the original conclusion rather than changing
+it.** CSE is now confirmed as the binding blocker across three independent
+measurements, on two kernels, with the display power path in two materially
+different states. That's a better bug report to Dell than the original.
 
 ## For a bug report
 
-To Dell (BIOS/ME firmware), reproduce with:
+Easiest reproduction is `measure-s0ix.sh` in this directory, which automates
+the delta method below (`sudo ./measure-s0ix.sh 90`). Manual steps, to Dell
+(BIOS/ME firmware):
 
 1. `sudo cat /sys/kernel/debug/pmc_core/substate_requirements`, note
    `CSE_VNN_REQ_STS`/`CSE_PGD0_PG_STS` values.
