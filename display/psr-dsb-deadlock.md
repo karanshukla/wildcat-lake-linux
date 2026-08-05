@@ -32,11 +32,19 @@ rollback to `6.19.13` (regression window `6.19.13` → `7.0.3`).
 Updating the kernel `7.1.4-200.fc44` → `7.1.4-202.fc44` alone. DSB errors still
 occurred afterward — this is a driver bug, not a packaging/version issue.
 
-## Fix: disable PSR / PSR2 selective-fetch / Panel Replay via boot args
+## Fix: disable PSR2 selective-fetch / Panel Replay via boot args
+
+**Revised 2026-08-05** — see "Narrowed to PSR1" below. The original fix
+disabled PSR entirely (`xe.enable_psr=0`); it now allows PSR1 and disables
+only the selective-fetch path that actually deadlocks the DSB:
 
 ```bash
-sudo grubby --update-kernel=ALL --args="xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0"
+sudo grubby --update-kernel=ALL --args="xe.enable_psr=1 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0"
 ```
+
+`enable_psr` is not a boolean: `0=disabled, 1=enable up to PSR1, 2=enable up
+to PSR2` (`modinfo xe`). The original arg took a bigger hammer than the bug
+needed.
 
 Reboot. Verify with:
 
@@ -49,13 +57,21 @@ Before: ~17,800+ per 10-minute session under load. After: 0.
 Current `/proc/cmdline` should include:
 
 ```
-xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0
+xe.enable_psr=1 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0
 ```
 
 To revert:
 
 ```bash
-sudo grubby --update-kernel=ALL --remove-args="xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0"
+sudo grubby --update-kernel=ALL --remove-args="xe.enable_psr=1 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0"
+```
+
+To go back to the original, blunter version (PSR off entirely) if PSR1 turns
+out to trigger the DSB deadlock too:
+
+```bash
+sudo grubby --update-kernel=ALL --remove-args="xe.enable_psr=1"
+sudo grubby --update-kernel=ALL --args="xe.enable_psr=0"
 ```
 
 ## Trade-off
@@ -67,11 +83,45 @@ during idle/static-screen periods (reading, typing pauses) — rough estimate
 workday. Not precisely measured (no clean before/after power-draw baseline was
 captured). No stability downside observed; fully reversible.
 
-## These boot args do NOT disable all eDP link power management (2026-08-05)
+## Narrowed to PSR1: the original args turned LOBF *on* (2026-08-05)
+
+The original `xe.enable_psr=0` had a side effect nobody noticed for two
+weeks: it enabled a *different* eDP link-power feature. From
+`drivers/gpu/drm/i915/display/intel_alpm.c`, in
+`intel_alpm_lobf_compute_config()`:
+
+```c
+if (crtc_state->has_psr)
+	return;
+```
+
+LOBF (Link Off Between Frames) only engages when PSR is **not** active. So
+disabling PSR entirely is precisely what allowed LOBF to run on this machine.
+LOBF is now the leading theory for the panel wedge in
+[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md),
+which makes this workaround a candidate contributor to that bug rather than
+unrelated background.
+
+Changed to `xe.enable_psr=1` (PSR1 only) as a result. That re-asserts
+`has_psr`, so LOBF never computes, while leaving PSR2 selective fetch — the
+mechanism this doc actually root-caused to the DSB deadlock — disabled.
+
+**Verification needed after the next reboot:**
+
+```bash
+journalctl -k -b 0 | grep -c "DSB 0"                                      # expect 0
+sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info      # expect LOBF status: disabled
+sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info                 # expect nonzero DC5/DC6 counts
+```
+
+If the DSB error count is nonzero under GPU-heavy load, PSR1 triggers the
+deadlock too and the revert command above puts the blunter arg back.
+
+## What the original boot args did NOT disable
 
 Worth stating explicitly, because this doc's args were treated elsewhere in
-the repo as meaning "link power management is off." They aren't. With all
-three set:
+the repo as meaning "link power management is off." They weren't. With all
+three of the *original* args set:
 
 ```
 $ sudo cat /sys/kernel/debug/dri/0000:00:02.0/eDP-1/i915_edp_lobf_info
@@ -82,16 +132,35 @@ Aux-less alpm status: enabled
 
 LOBF (Link Off Between Frames, eDP 1.5, part of ALPM) powers the physical eDP
 link down between frames rather than stopping frames the way PSR does. It's a
-separate feature with a separate mechanism and no `xe.*` module parameter; the
-only kill switch found is the writable debugfs node
-`eDP-1/i915_edp_lobf_debug`. It is currently the leading theory for the panel
-wedge in
-[../power/s2idle-rapid-resume-hang.md](../power/s2idle-rapid-resume-hang.md).
+separate feature with a separate mechanism and no `xe.*` module parameter.
 
-## Power cost of these args, now with a mechanism (2026-08-05)
+The debugfs node `eDP-1/i915_edp_lobf_debug` (write non-zero to set
+`alpm.lobf_disable_debug`) looks like a direct kill switch but **is unusable
+on this machine**:
+
+```
+$ echo 1 | sudo tee .../eDP-1/i915_edp_lobf_debug
+tee: '.../i915_edp_lobf_debug': Operation not permitted
+
+$ cat /sys/kernel/security/lockdown
+none [integrity] confidentiality
+$ mokutil --sb-state
+SecureBoot enabled
+```
+
+Secure Boot puts the kernel in lockdown integrity mode, which blocks
+`DEFINE_SIMPLE_ATTRIBUTE`-backed debugfs files for both read and write. Not a
+permissions issue; `sudo` doesn't help. Disabling Secure Boot would unblock it
+but breaks TPM2-sealed LUKS auto-unlock (PCR 7 covers Secure Boot state, see
+[../disk-encryption/tpm2-luks.md](../disk-encryption/tpm2-luks.md)) and the
+MOK-enrolled DKMS modules. Not worth it for a test, which is why the PSR1
+route above was taken instead.
+
+## Power cost of the original args, with a mechanism (2026-08-05)
 
 The trade-off estimate below (~0.5-1W, never measured) now has a confirmed
-mechanism behind it:
+mechanism behind it. This is measured with the original `xe.enable_psr=0`;
+the PSR1 change above should reverse it:
 
 ```
 $ sudo cat /sys/kernel/debug/dri/0000:00:02.0/i915_dmc_info

@@ -502,10 +502,36 @@ Why this is now the leading theory:
 - New feature, new silicon, A0 stepping. Same pattern as everything else in
   this repo.
 
-Not confirmed. No A/B has been run with LOBF disabled, because the only kill
-switch found is the writable debugfs node `eDP-1/i915_edp_lobf_debug` (no
-`xe.*` module parameter exists for it), and its write semantics haven't been
-read yet.
+**And this machine's own PSR workaround is what turned LOBF on.** From
+`drivers/gpu/drm/i915/display/intel_alpm.c`, in
+`intel_alpm_lobf_compute_config()`:
+
+```c
+if (crtc_state->has_psr)
+	return;
+```
+
+LOBF only engages when PSR is inactive. `xe.enable_psr=0`, added for the DSB
+deadlock in [psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md), is
+therefore what allowed LOBF to run at all. That makes the PSR boot args a
+candidate contributor to this bug rather than unrelated background, which is
+what they had been treated as throughout this doc.
+
+**The obvious kill switch is unusable here.** `eDP-1/i915_edp_lobf_debug`
+(write non-zero to set `alpm.lobf_disable_debug`, which makes
+`lobf_compute_config` bail) is blocked by kernel lockdown:
+
+```
+$ echo 1 | sudo tee .../eDP-1/i915_edp_lobf_debug
+tee: '.../i915_edp_lobf_debug': Operation not permitted
+$ cat /sys/kernel/security/lockdown
+none [integrity] confidentiality
+```
+
+Secure Boot forces lockdown integrity mode, which blocks
+`DEFINE_SIMPLE_ATTRIBUTE` debugfs files for read and write both. Disabling
+Secure Boot would unblock it and break TPM2 LUKS auto-unlock and the MOK-signed
+DKMS modules, so it wasn't done.
 
 ### Finding 2: the display engine never enters DC5/DC6, and the cause is local
 
@@ -605,23 +631,51 @@ rather than `Never` deliberately, because disabling VRR outright is a
 documented crash-on-disable in this driver (see
 [known-issues.md](../known-issues.md)).
 
-**Result: LOBF stayed enabled.** Re-read after the change and after the
-resulting modeset, `i915_edp_lobf_info` still reports `LOBF status: enabled` /
-`Aux-less alpm status: enabled`. So the VRR-policy-keeps-LOBF-alive
-hypothesis is **not supported**. The setting was left on `Automatic` anyway
-(nothing is lost), but it does not do what it was applied to do.
+**Result: LOBF stayed enabled**, and the source says why. The gate is:
 
-**2. Recommended, not yet applied: turn off KDE's screen dimming.** This
+```c
+if (!intel_vrr_always_use_vrr_tg(display) || !intel_vrr_is_fixed_rr(crtc_state))
+	return;
+```
+
+`intel_vrr_always_use_vrr_tg()` is a platform property of `DISPLAY_VER >= 20`
+(the VRR timing generator is always used on Xe3), not the compositor's
+adaptive-sync policy. KWin's setting was never going to touch it. Hypothesis
+dead, setting left on `Automatic` anyway since nothing is lost by it, but it
+is **not** a fix for anything.
+
+**2. `xe.enable_psr=0` → `xe.enable_psr=1` (PSR1 only).** Applied
+2026-08-05, pending reboot. This is the actual LOBF lever given the debugfs
+node is locked down: re-asserting `has_psr` makes `lobf_compute_config` bail
+before it can set `has_lobf`. `enable_psr` is an int, not a bool
+(`0=disabled, 1=up to PSR1, 2=up to PSR2`), so PSR1 can be restored while
+leaving PSR2 selective fetch — the mechanism actually root-caused to the DSB
+deadlock — disabled.
+
+```bash
+sudo grubby --update-kernel=ALL --remove-args="xe.enable_psr=0"
+sudo grubby --update-kernel=ALL --args="xe.enable_psr=1"
+```
+
+Expected side effect: DC5/DC6 start working, so the display engine
+power-gates for the first time on this machine. Risk: if PSR1 also triggers
+the DSB deadlock, the glitching returns and the arg goes back to `0`. Checks
+to run after the reboot are in
+[psr-dsb-deadlock.md](../display/psr-dsb-deadlock.md).
+
+**3. Recommended, not yet applied: turn off KDE's screen dimming.** This
 removes the one actor present in both reproductions. As of this writing
 `~/.config/powerdevilrc` is unchanged (mtime 2026-08-04 21:41) and contains
 no `DimDisplay` section, so the setting has not persisted.
 
 ### Remaining questions
 
-- Read the write semantics of `eDP-1/i915_edp_lobf_debug` and, if it takes a
-  disable, apply it at boot via a small systemd unit. This is the direct test
-  of the leading theory and it hasn't been run. Requires a sudo read from a
-  real terminal.
+- **Confirm `xe.enable_psr=1` actually disables LOBF** after the next reboot
+  (`i915_edp_lobf_info` should read `LOBF status: disabled`), then re-run the
+  reproducer to see whether the wedge rate changes. This is the direct test of
+  the leading theory.
+- Whether PSR1 alone reintroduces the DSB deadlock. If it does, this lever is
+  gone and the only remaining LOBF kill switch requires disabling Secure Boot.
 - Run `--mode race --race-every 3` to test the cold-activation collision that
   the warm-write run missed.
 - `drm.debug=0x1e` (KMS + ATOMIC) has never been enabled. Every capture to

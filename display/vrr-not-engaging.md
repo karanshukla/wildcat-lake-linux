@@ -138,12 +138,35 @@ LOBF status: enabled
 Aux-less alpm status: enabled
 ```
 
-Unchanged. VRR policy is not what keeps LOBF enabled, or `Automatic` is not a
-small enough setting to drop the AS-SDP path. Left on `Automatic` regardless,
-since nothing is lost by it, but it should not be recorded as a fix for
-anything. `Never` was deliberately not tried: disabling VRR outright is a
-documented crash-on-disable in this driver (see
+Unchanged, and the driver source says why. From
+`drivers/gpu/drm/i915/display/intel_alpm.c`, the VRR-related gate in
+`intel_alpm_lobf_compute_config()` is:
+
+```c
+if (!intel_vrr_always_use_vrr_tg(display) || !intel_vrr_is_fixed_rr(crtc_state))
+	return;
+```
+
+`intel_vrr_always_use_vrr_tg()` is a platform property of `DISPLAY_VER >= 20`
+(on Xe3 the VRR timing generator is always used), not the compositor's
+adaptive-sync policy. No KWin setting can affect it. The hypothesis was wrong
+about the mechanism, not just the magnitude.
+
+What actually gates LOBF here is PSR: `if (crtc_state->has_psr) return;`. See
+[psr-dsb-deadlock.md](psr-dsb-deadlock.md), where `xe.enable_psr=0` has now
+been narrowed to `xe.enable_psr=1` for exactly this reason.
+
+Left on `Automatic` regardless, since nothing is lost by it, but it should not
+be recorded as a fix for anything. `Never` was deliberately not tried:
+disabling VRR outright is a documented crash-on-disable in this driver (see
 [../known-issues.md](../known-issues.md)).
+
+One incidental correction to the table above: this doc previously listed
+"`xe.enable_psr=0 ...` collaterally killed the vblank-stretching path" as an
+untested candidate for the VRR failure. It is still untested, but note that
+`enable_psr` is an int (`0=disabled, 1=up to PSR1, 2=up to PSR2`), so the
+narrower `xe.enable_psr=1` now in place is itself a partial test of that
+candidate. Re-measure vblank after the next reboot.
 
 ## For a bug report
 
