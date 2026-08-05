@@ -295,10 +295,17 @@ denied read access to debugfs/journal outright, and denied
 hand-written SELinux policy module scoped to exactly that one
 `apmd_t → systemd_unit_file_t : service start` rule) → the actual capture
 script, running unconfined under systemd, writing to `/var/tmp` (world-
-traversable, no override needed) instead of `~`. This is temporary
-diagnostic instrumentation, not a permanent fixture — remove once this bug
-is closed out: disable/remove the `acpid` config and trigger script, `sudo
-semodule -r capture_blank_resume_acpid`, delete `/var/tmp/blank-resume-captures`.
+traversable, no override needed) instead of `~`. This was temporary
+diagnostic instrumentation, not a permanent fixture.
+
+**Removed (2026-08-05):** kernel-space instrumentation had hit its ceiling —
+DRM/dmesg state came back identical between bug and non-bug resumes, so
+further captures weren't adding signal. Uninstalled `acpid`, the trigger/
+capture scripts, the `capture-blank-resume.service` unit, the
+`capture_blank_resume_acpid` SELinux module, and the captured data under
+`/var/tmp/blank-resume-captures`. The repo's own
+`capture-blank-resume-state.sh` stays as a reference for what the capture
+logic did.
 
 **Delayed capture (t0 / t+3s / t+8s).** The original single-shot capture
 can't tell "compositor hasn't remodeled yet" apart from "actually stuck" —

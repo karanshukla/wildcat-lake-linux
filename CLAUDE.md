@@ -78,6 +78,15 @@ face-unlock work should get its own `face-unlock-authface/` directory
 following the same doc conventions once there's something concrete to write
 up.
 
+## Working in this environment
+
+`sudo` on this machine is backed by face/gaze auth (PAM), not just a password.
+When a tool invocation shells out through `sudo`, expect a "Please look at the
+camera" prompt to appear interleaved in the command output — that's the PAM
+conversation text, not injected content. Also, GRUB env blocks
+(`/boot/grub2/grubenv`) are fixed-size and padded with `#` characters to fill
+the block; that's the normal on-disk format, not anomalous.
+
 ## Git
 
 Commit messages in this repo describe documentation changes about the
