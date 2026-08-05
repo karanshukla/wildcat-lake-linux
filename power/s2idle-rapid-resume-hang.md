@@ -15,9 +15,12 @@ unchanged) — the fault lives below what any kernel-space instrumentation can
 see. Leading theory is now a possible link to
 [s0ix-never-entered.md](s0ix-never-entered.md): the platform never reaching
 real S0ix may mean the display power domain never gets a full clean
-power-cycle on any resume, not confirmed. BIOS `Power on LID open` test is
-partially run (disabled, one clean cycle observed) but not conclusive yet.
-See "Update (2026-08-04, continued)" below for full detail.
+power-cycle on any resume, not confirmed. BIOS `Power on LID open` test was
+run and produced a **third failure mode**: a display wedge with the lid held
+open the entire time (no suspend/resume involved at all — traced to KDE's
+idle screen-lock/dim step), which this time did **not** recover with a lid
+nudge, forcing a hard power-off. `Power on LID open` has been reverted back
+to enabled as a result — see "Third incident" below.
 
 ## What happened
 
@@ -367,6 +370,78 @@ device suspend/resume timing — not just a screen lock, a real (if brief)
 same as every clean resume so far). One clean cycle isn't a confirmation
 either way; the proposed test (several more cycles, including at least one
 deliberately slow open) still hasn't been run.
+
+## Third incident (2026-08-04, ~21:01-21:06 EDT): idle-lock wedge, no lid or suspend involved, lid-nudge recovery failed for the first time
+
+Happened during the BIOS test from the update above, with the lid held open
+the entire time. Timeline (all times EDT, previous boot `20:53-21:05`):
+
+| Time | Event |
+|---|---|
+| 20:53:52 | Lid opened (clean resume, already covered above) |
+| 21:01:57 | `org.kde.powerdevil.backlighthelper` runs (idle-dim step); `gazed`'s later log dates the session lock to this same second |
+| 21:01:57–21:04:24 | **Screen never recovers.** No kernel errors, no `PM: suspend entry` anywhere in this window |
+| 21:04:24 | Second `backlighthelper` run + a `gazed` face-auth attempt (`lock_elapsed_ms=148255` ≈ 148s since 21:01:57) — user trying to wake it |
+| 21:04:29–21:05:16 | Five lid close/open cycles in under a minute — **the usual nudge recovery, none of which worked** |
+| ~21:06 | Forced power-off, fresh boot |
+
+**This was not a suspend/resume event.** There's no `PM: suspend entry`
+anywhere in the previous boot's kernel log after 20:53:53. The kernel-level
+"`Lockdown: systemd-logind: hibernation is restricted`" burst at 21:01:57
+looked like a smoking gun at first (it's the same message that showed up
+during real suspend attempts elsewhere in this doc), but it's a red herring
+here: it coincides with routine `CanHibernate()`-style property probing, not
+an actual sleep call, and `backlighthelper` running at the exact same second
+is PowerDevil's ordinary idle-timeout backlight dim, not suspend prep. The
+actual event was KDE's own idle screen-lock, independent of ACPI suspend and
+independent of the lid entirely — lid stayed open from 20:53:52 all the way
+to 21:04:29.
+
+**Why this matters:** all prior investigation in this doc assumed the
+trigger was always a lid-open racing an ACPI/EC resume path. This incident
+had no lid event, no suspend, no resume anywhere near the wedge — just KDE's
+ordinary idle-dim/lock sequence toggling the display. That points at a
+broader root cause than "lid-open specifically": the `xe` driver's
+panel/backlight power path may be fragile across *any* DPMS-off→DPMS-on
+transition on this eDP output, whether it's triggered by ACPI suspend/resume,
+the EC's lid-open signal, or plain userspace idle-timeout blanking. The
+common thread across all three failure modes in this doc (this one, the
+2026-08-03 polkit-denied incident, and the ordinary lid-open blank-screen
+bug) may simply be "power-cycling this panel is unreliable," not anything
+specific to lid switches.
+
+**The recovery trick failed for the first time.** Every previous occurrence
+in this doc and in `capture-blank-resume-state.sh` testing was recoverable
+with a lid close/open nudge. This one wasn't — five nudges in under a
+minute, no recovery, forced power-off required. The one thing different this
+time: `Power on LID open` was disabled in BIOS for the confirmation test
+proposed in the update above. Working theory for *why* the nudge stopped
+working: the lid-nudge recovery may not actually be forcing a fresh OS-level
+modeset at all — it may be riding on the EC's own independent "power on lid
+open" hardware signal to force a physical panel/backlight power-cycle that
+bypasses the (already-wedged) `xe` driver state entirely. With that EC
+behavior disabled, a lid nudge only round-trips through the same OS-level
+DPMS/resume code path that's already stuck, so it can't recover anything.
+If that's right, the BIOS setting was never purely a bug trigger — it may
+also be the only thing that makes recovery-without-a-hard-reset possible at
+all, at least for this class of wedge. Not proven (only one data point: the
+one incident it happened to coincide with), but consistent with everything
+observed so far.
+
+**Decision: `Power on LID open` re-enabled**, reverted immediately after this
+incident. Given the theory above, disabling it trades "possibly reduces one
+race" for "definitely removes the only known recovery path for at least one
+wedge variant" — a bad trade until there's a demonstrated alternative
+recovery method (VT switch already failed for the 2026-08-03 incident;
+whether Magic SysRq (`Alt+screenshot-key+REISUB`) would have worked here
+wasn't tested before the forced power-off).
+
+**Not yet done:** confirming whether Magic SysRq recovers this wedge variant
+(would give a safe recovery path that doesn't depend on the BIOS setting,
+if it works). Also worth checking KDE's idle-lock/dim timings
+(`powermanagementprofilesrc`) to reproduce this deliberately (idle out the
+session without touching the lid) rather than waiting for it to recur
+naturally.
 
 ## Mitigations applied (2026-08-03 addition)
 
