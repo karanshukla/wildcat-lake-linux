@@ -52,7 +52,9 @@ header and the driver table. **That was wrong** — see below.
 
 ## Why it's absent (answered upstream 2026-08-05)
 
-The report drew a same-day reply on `linux-pm`. The technical position:
+The report drew a same-day reply on `linux-pm`
+([thread](https://lore.kernel.org/all/CABoscTJgNio4fR60EBOONzxDrq5Ve+8NhqUVa5Z=Nh-DJ=JOxA@mail.gmail.com/)).
+The technical position:
 
 - The Panther Lake table was produced by measuring Panther Lake. Wildcat
   Lake has not been measured.
@@ -191,10 +193,14 @@ from outside Intel, so asserting `ptl_cstates` fits Wildcat Lake would
 have been a guess. The upstream answer confirmed that judgment — see
 "Why it's absent" above.
 
-Mail note for next time: the first send went out as HTML and vger
-dropped it, so it never reached the list archive. The Cc'd maintainers
-received it directly and one replied on-list, which archived the thread
-anyway. Send plain text to vger.
+Mail note for next time: **send plain text to vger.** The first attempt
+went out as HTML and was dropped, so it never reached the list archive —
+lore shows the thread rooted at `[parent not found]`, knowing the
+message exists only from the `In-Reply-To` header of the reply. The
+Cc'd maintainers received it directly regardless, and the reply landed
+on-list, so the thread exists. The original body was then reposted
+inside a plain-text reply, which recovered the content even though the
+original message record stays missing.
 
 - Hardware: Dell XPS 13 DX13260, BIOS 1.3.0 (2026-06-25)
 - CPU: Intel Core 5 320, family 6 model 213 (`0xD5`) stepping 1
