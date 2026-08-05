@@ -397,6 +397,13 @@ S0i2/S0i3.
   Moot for this specific bug either way, `intel_lpmd` manages CPU
   core-parking/EPP, not ME firmware state, so it was never going to touch
   this blocker regardless of platform-check support.
+- `intel_idle` also has no entry for model `0xD5` and runs from ACPI
+  `_CST` here, found 2026-08-05 (see
+  [intel-idle-no-wildcat-lake-entry.md](intel-idle-no-wildcat-lake-entry.md)).
+  Also not this blocker: S0ix needs the cores in CC10 and they already get
+  there. Noted so it doesn't get re-investigated as a candidate. It does
+  mean `turbostat` can't read package C-states on this model, so PC10 is
+  currently unmeasurable.
 - Whether Dell ships a BIOS/ME firmware update that changes this behavior.
   This is now confirmed as the only remaining lever, nothing left to try from
   the OS side. **Checked 2026-08-05 on both `lvfs` and `lvfs-testing`:
