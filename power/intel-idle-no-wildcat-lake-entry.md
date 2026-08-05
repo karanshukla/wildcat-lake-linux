@@ -1,9 +1,10 @@
 # `intel_idle` has no Wildcat Lake entry, falls back to ACPI `_CST`
 
-**Status:** Open, reported upstream. Not the S0ix blocker — see
-[s0ix-never-entered.md](s0ix-never-entered.md). A cheap test exists
-(`intel_idle.table=`) but was deliberately not run; see "Untested
-hypothesis" below. Found 2026-08-05.
+**Status:** Open, reported upstream 2026-08-05 and answered the same day.
+**The omission is deliberate, not an oversight** — reusing the Panther
+Lake values for Wildcat Lake was considered and rejected. The blocker is
+that this silicon has not been measured. Not the S0ix blocker either —
+see [s0ix-never-entered.md](s0ix-never-entered.md). Found 2026-08-05.
 
 ## Symptom
 
@@ -44,8 +45,33 @@ X86_MATCH_VFM(INTEL_PANTHERLAKE_L, &idle_cpu_ptl),   /* no WCL entry */
 
 Panther Lake was added 2026-03-11 (`intel_idle: Add Panther Lake
 C-states table`). `INTEL_PANTHERLAKE_R` (0xE5) is also in the family
-header and also absent from `intel_idle`, so this looks like the usual
-lag between the two rather than anything specific to Wildcat Lake.
+header and also absent from `intel_idle`.
+
+The initial read here was that this is the usual lag between the family
+header and the driver table. **That was wrong** — see below.
+
+## Why it's absent (answered upstream 2026-08-05)
+
+The report drew a same-day reply on `linux-pm`. The technical position:
+
+- The Panther Lake table was produced by measuring Panther Lake. Wildcat
+  Lake has not been measured.
+- Reusing the PTL values for WCL was considered and rejected, on the
+  grounds that firmware may differ between the two.
+
+So this isn't a table nobody got around to filling in; it's one nobody
+has the data for. Which means:
+
+- Sending a patch asserting `ptl_cstates` fits WCL would have been
+  exactly the wrong move, for precisely the reason it wasn't sent.
+- Adding 0xD5 upstream requires somebody to **measure** the C-states on
+  real Wildcat Lake silicon.
+- The tool for that is [intel/wult](https://github.com/intel/wult)
+  ("Wake Up Latency Tracer", tools for measuring C-state latency on
+  Linux), maintained by the same people who maintain `intel_idle`.
+
+This machine is Wildcat Lake and can run those measurements, which is
+the open thread as of 2026-08-05.
 
 ## What the fallback actually costs
 
@@ -122,6 +148,12 @@ Deliberately not run (2026-08-05). Low risk, low measurable reward, and
 it does not touch S0ix either way. Baseline captured before deciding, in
 case this is revisited.
 
+The upstream answer above independently supports leaving it alone: PTL
+values were rejected for WCL over possible firmware differences.
+Borrowing them locally to see what happens is a different risk calculus
+from shipping them, but it would produce a number nobody should trust
+either way. Proper `wult` measurement is what actually settles it.
+
 ## Not the S0ix blocker
 
 Worth stating plainly, since the two look related and aren't. S0ix needs
@@ -152,11 +184,17 @@ the zero S0ix residency from a source other than `pmc_core`.
 
 ## For a bug report
 
-Reported to `linux-pm@vger.kernel.org` (maintainers Rafael J. Wysocki,
-Artem Bityutskiy; `R:` Len Brown). Sent as a report rather than a patch:
-target residencies are silicon-specific and can't be verified from
-outside Intel, so asserting `ptl_cstates` fits Wildcat Lake would be a
-guess.
+Sent to `linux-pm@vger.kernel.org` 2026-08-05, Cc'd to the `intel_idle`
+maintainers listed in `MAINTAINERS`. Sent as a report rather than a
+patch: target residencies are silicon-specific and can't be verified
+from outside Intel, so asserting `ptl_cstates` fits Wildcat Lake would
+have been a guess. The upstream answer confirmed that judgment — see
+"Why it's absent" above.
+
+Mail note for next time: the first send went out as HTML and vger
+dropped it, so it never reached the list archive. The Cc'd maintainers
+received it directly and one replied on-list, which archived the thread
+anyway. Send plain text to vger.
 
 - Hardware: Dell XPS 13 DX13260, BIOS 1.3.0 (2026-06-25)
 - CPU: Intel Core 5 320, family 6 model 213 (`0xD5`) stepping 1
@@ -175,4 +213,8 @@ Fourth piece of Intel tooling found not to know model 0xD5:
 | `intel_lpmd` | "Platform not supported yet", exits on every boot | [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123), fix proposed in [#124](https://github.com/intel/intel-lpmd/pull/124) |
 | `thermald` | "Unsupported cpu model or platform" | Not filed |
 | `turbostat` | Can't read package C-state residency | Not filed |
-| `intel_idle` | Falls back to ACPI `_CST` | Reported to linux-pm 2026-08-05 |
+| `intel_idle` | Falls back to ACPI `_CST` | Reported to linux-pm 2026-08-05, answered same day: deliberate, pending measurement |
+
+`intel_idle` turns out not to belong with the other three. Those are
+lookup tables nobody has updated yet. This one is a deliberate hold
+pending data, which is a different and more defensible thing.
