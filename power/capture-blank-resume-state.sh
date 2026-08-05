@@ -6,13 +6,16 @@
 # Ctrl+Alt+F1/F2 back.
 #
 # Writes a timestamped bundle to ~/blank-resume-captures/ for comparison
-# against a normal resume, and to attach to a bug report.
+# against a normal resume, and to attach to a bug report. Set
+# CAPTURE_OUT_BASE to write elsewhere (e.g. for a confined caller like an
+# acpid hook running as root under SELinux, which can't cross into a 700
+# home directory without a dac_override it doesn't have).
 
 set -uo pipefail
 
 CARD=0000:00:02.0
 DBG=/sys/kernel/debug/dri/$CARD
-OUT=~/blank-resume-captures/$(date +%Y%m%d-%H%M%S)
+OUT="${CAPTURE_OUT_BASE:-$HOME/blank-resume-captures}/$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 
 echo "Capturing to $OUT"
@@ -33,6 +36,13 @@ sudo cat "$DBG/eDP-1/i915_panel_timings" > "$OUT/edp1-panel-timings.txt" 2>&1
 # Hotplug storm detection — did the driver see (and maybe throttle) repeated
 # short/long HPD pulses around resume?
 sudo cat "$DBG/i915_hpd_storm_ctl" > "$OUT/hpd-storm-ctl.txt" 2>&1
+
+# S0ix substate snapshot — s0ix-never-entered.md already root-caused the
+# platform never reaching S0ix (ME/CSE firmware never releases VNN), but
+# capturing it here too in case a bad lid-open resume ever correlates with
+# something unusual on the power-gating side.
+sudo cat /sys/kernel/debug/pmc_core/substate_residencies > "$OUT/pmc-substate-residencies.txt" 2>&1
+sudo cat /sys/kernel/debug/pmc_core/substate_requirements > "$OUT/pmc-substate-requirements.txt" 2>&1
 
 # Quick sysfs cross-check, no sudo needed
 for f in status enabled dpms; do

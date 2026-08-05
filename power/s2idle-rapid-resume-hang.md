@@ -7,6 +7,18 @@ preceded the hang, VT switch also failed to recover it) — likely a related but
 distinct bug, not a repeat of the same one. `polkitd` debug logging added as a
 result; still not root-caused.
 
+**2026-08-04 update:** built an automated capture pipeline and caught two real
+blank-screen-on-lid-open reproductions with full before/after DRM state. Both
+are indistinguishable from a clean resume at the kernel/DRM level (atomic
+state self-heals within 3s either way, no dmesg errors, PSR/panel config
+unchanged) — the fault lives below what any kernel-space instrumentation can
+see. Leading theory is now a possible link to
+[s0ix-never-entered.md](s0ix-never-entered.md): the platform never reaching
+real S0ix may mean the display power domain never gets a full clean
+power-cycle on any resume, not confirmed. BIOS `Power on LID open` test is
+partially run (disabled, one clean cycle observed) but not conclusive yet.
+See "Update (2026-08-04, continued)" below for full detail.
+
 ## What happened
 
 Default suspend mode on this hardware is `s2idle`, which has the known cosmetic bug
@@ -260,6 +272,101 @@ underlying reason the `xe` driver's panel-power path can't tolerate two
 concurrent wake triggers in the first place — that's a driver-maturity gap
 needing an upstream fix, same bucket as the DSB deadlock — but no OS-side
 lever touches that part regardless.
+
+## Update (2026-08-04, continued): automated capture, real reproductions, revised theory
+
+**Automated capture pipeline.** Manual capture can't win the race against the
+only available recovery: a lid nudge is what fixes the black screen, and
+nudging is exactly what destroys the live DRM/debugfs state
+`capture-blank-resume-state.sh` needs. Built an automatic hook instead:
+`acpid` (installed for this purpose) fires on every raw `button/lid.*` ACPI
+event, before any human reaction can touch the state — good and bad cycles
+both get captured, bad ones just happen to be the ones worth reading.
+
+Getting there hit several SELinux walls, since `acpid` runs confined as
+`apmd_t`: denied `dac_override` (can't cross into the 700 home directory at
+all, not to write output and not even to exec a script living under it),
+denied read access to debugfs/journal outright, and denied
+`service:start` on a custom systemd unit. Final architecture: `acpid` →
+`systemctl start capture-blank-resume.service` (permitted via a small
+hand-written SELinux policy module scoped to exactly that one
+`apmd_t → systemd_unit_file_t : service start` rule) → the actual capture
+script, running unconfined under systemd, writing to `/var/tmp` (world-
+traversable, no override needed) instead of `~`. This is temporary
+diagnostic instrumentation, not a permanent fixture — remove once this bug
+is closed out: disable/remove the `acpid` config and trigger script, `sudo
+semodule -r capture_blank_resume_acpid`, delete `/var/tmp/blank-resume-captures`.
+
+**Delayed capture (t0 / t+3s / t+8s).** The original single-shot capture
+can't tell "compositor hasn't remodeled yet" apart from "actually stuck" —
+both look identical immediately after a resume. Fixed by having the trigger
+capture three times: immediately, then again at +3s and +8s (via `systemd-run`,
+detached from the triggering service's cgroup so it survives after the
+oneshot service exits). Also added a `pmc_core substate_residencies`/
+`substate_requirements` snapshot to both the automated hook and the
+canonical `capture-blank-resume-state.sh`, to check whether a bad resume
+ever correlates with anything unusual on the S0ix power-gating side (see
+below).
+
+**Two real reproductions captured and analyzed (20:47:51 and 20:48:03 EDT),
+against a clean resume for comparison (20:48:29).** Result: no distinguishing
+signal anywhere in kernel-observable state.
+
+- Connector/CRTC atomic state: all three captures show pipe A disabled and
+  the connector unbound (`crtc=(null)`) at t0, then fully recovered
+  (`enable=1, active=1, crtc=pipe A`) by t+3s — identical pattern whether the
+  screen was actually blank or not. This confirms the t0-disabled state is
+  just the universal post-resume transient (the capture fires faster than
+  KWin's own re-modeset), not a bug signature. It also means the driver's own
+  bookkeeping self-heals within 3 seconds in both bad cycles, even though the
+  user-visible black screen persisted until a further lid nudge — the actual
+  fault isn't visible in DRM atomic state at any point sampled.
+- PSR status, PSR sink status, and panel timings: byte-identical across all
+  three captures, PSR still correctly disabled, no sink error status.
+- `dmesg`: identical `PM: suspend/resume devices took ~0.39s` timing and zero
+  errors/warnings across all three — no DP/eDP/link-training complaints, no
+  DSB/underrun signatures.
+- One red herring, ruled out: `kdeconnectd` crashed (SIGABRT, coredump
+  confirmed via `coredumpctl`) one second after the first reproduction. Did
+  not recur for the second reproduction or the clean resume, so it's an
+  unrelated, separate bug (KDE Connect crashing on some resumes), not the
+  cause of the display hang.
+
+Net effect: kernel/DRM-level instrumentation has hit its ceiling. Whatever's
+actually failing isn't observable at the atomic-commit level, in PSR/panel
+config, or in dmesg — it has to be at or below the physical eDP link/panel-
+power sequencing itself, or in compositor state that isn't logged.
+
+**Revised theory: possible link to the platform never reaching real S0ix.**
+Previously treated [s0ix-never-entered.md](s0ix-never-entered.md) (platform
+never leaves the `s2idle`-without-S0ix floor because Intel ME/CSE firmware
+never releases its own VNN power requirement, confirmed independent of the
+host `mei` driver) as an unrelated battery-life issue. Reconsidering: if the
+display power domain shares any of the platform-level power gating that
+ME/CSE is blocking, then every sleep on this machine — buggy resume or not —
+is doing a shallow, partial power-cycle rather than a full clean one. That
+would mean the eDP/panel-power path never actually goes through the
+power-down/power-up sequence a genuinely-idle platform would, on *any*
+resume. That's a plausible explanation for why the bug is invisible to every
+piece of software-observable state checked above: if the fault is a physical
+power-sequencing edge case that only manifests because the platform never
+fully quiesces between sleeps, DRM atomic state and dmesg would look
+completely normal either way, which is exactly what was found. Not
+confirmed — there's no direct evidence yet that the eDP power well is
+actually gated by the same platform-level mechanism the ME is blocking, that
+link is the missing piece. But it upgrades this from "two unrelated bugs" to
+a specific, testable mechanism worth tracking as the leading theory.
+
+**BIOS confirmation test — partial run.** Disabled `Power on LID open` in
+BIOS (reboot required). First post-change lid cycle (20:53:45 close →
+20:53:52 open, 7s) produced a genuine, complete suspend/resume — confirmed
+via `PM: suspend entry (s2idle)`, Wi-Fi deauthenticating on suspend and
+reassociating on resume, `ACPI: EC: interrupt blocked`/`unblocked`, full
+device suspend/resume timing — not just a screen lock, a real (if brief)
+`s2idle` cycle. No display bug on this resume (captured, self-healed by t+3s
+same as every clean resume so far). One clean cycle isn't a confirmation
+either way; the proposed test (several more cycles, including at least one
+deliberately slow open) still hasn't been run.
 
 ## Mitigations applied (2026-08-03 addition)
 
