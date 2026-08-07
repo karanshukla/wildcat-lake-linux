@@ -184,7 +184,25 @@ channel via an Analogix bridge (`AnxAuxCommunication.dll`), payload
 principle, since PSR and LOBF are negotiated between source and sink, and the
 sink is the T-CON.
 
-**Declined, deliberately.** Reasons, in order of weight:
+Dell's release notes for it (Driver ID `10FKG`, version `02.02, A00`,
+06 Aug 2026, Firmware / Notebook LCD, marked Critical) state exactly one fix:
+
+> Fixed the issue where the touch panel flickers when it is used.
+
+That is a narrow, specific defect: display flicker while the touchscreen is
+being touched, i.e. touch-scan noise coupling into the panel. It is none of
+the open display bugs here. Not the PSR2/DSB glitching under GPU load, not the
+panel wedge, not VRR failing to modulate. No flicker-on-touch symptom has ever
+been observed on this machine.
+
+The touchscreen itself is real and present, so the package does target this
+hardware: `LXST2024:00 1FD2:5010` on I2C, tagged `ID_INPUT_TOUCHSCREEN=1`.
+LX Semicon (VID `1FD2`) supplies the touch-display driver IC for LG Display
+panels. It is distinct from the Goodix `GXTP7863` touchpad.
+
+**Declined, deliberately.** The decisive reason is the release note above: it
+fixes a defect this machine does not exhibit. The remaining reasons, in order
+of weight:
 
 1. The wedge no longer reproduces since `xe.enable_psr=1`. Risking the panel to
    fix something that currently looks fixed is a bad trade.
