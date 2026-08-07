@@ -479,6 +479,24 @@ Package C10  4,555,167 -> 95,615,798
 Cores reach CC10 as always. The platform still enters no S0ix substate. **No
 change from 1.3.0.**
 
+Corroborated independently with Intel's own S0ixSelftestTool (`-s`), run at
+20:20 on BIOS 1.3.0 and again at 22:37 on 1.6.0. `diff` of the two output logs
+returns **only two differing lines**, both turbostat sample durations
+(`14.999830 sec` vs `15.674594 sec`, `15.184409 sec` vs `15.313651 sec`).
+Every substantive line is byte-identical:
+
+```
+Low Power S0 Idle is:1
+Your system supports low power S0 idle capability.
+S0ix substate residency before S2idle:  0 0 0
+SYS%LPI  0.00
+Your system did not achieve PC2 state or PC2 residency is low
+```
+
+So both the local delta harness and Intel's tool agree the BIOS update changed
+nothing about S0ix. (The tool also can't read `Pkg%pc2/pc3/pc6/pc8`, which is
+the separate `intel_idle` `0xD5` gap, not a new symptom.)
+
 This is not evidence against root cause #3. It is what root cause #3 predicts.
 Dell's `platform.ini` for this package sets:
 
