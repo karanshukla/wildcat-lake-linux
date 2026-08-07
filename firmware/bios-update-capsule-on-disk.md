@@ -160,16 +160,32 @@ FMP structure was needed, even though `FMP_CAPSULE_SUPPORTED` is advertised.
 `CapsuleGuid` = the ESRT `fw_class` is enough. That answers the main open
 question from the staging attempt.
 
+## Does it fix S0ix? No, and it could not have
+
+Tested the same night with `../power/measure-s0ix.sh 90`. A clean 91-second
+`s2idle` cycle (`suspend entry` 22:32:07, `suspend exit` 22:33:38) left every
+substate at 0, identical to 1.3.0. Package C10 accumulated normally, so the
+cores still reach CC10; the platform still never reaches S0ix.
+
+That is the predicted result, not a surprise. `[Region] ME=0` means this
+package only ever writes the BIOS region, and the S0ix blocker is CSE-side.
+ESRT entry1 is unchanged at 1345 afterwards, confirming ME was untouched.
+
+**ESRT entry1 is the CSE firmware.** GUID
+`865d322c-6ac7-4734-b43e-55db5a557d63`, `fw_version 1345`, and
+`/sys/class/mei/mei0/fw_ver` reports `21.50.1.1345`. It is flagged `Updatable`
+via capsule-on-disk with `lowest_supported_fw_version 1000`, so the delivery
+mechanism for a CSE update already works on this machine. The only missing
+piece is a capsule from Dell. Details in
+[../power/s0ix-never-entered.md](../power/s0ix-never-entered.md).
+
 ## Remaining questions
 
-- Does 1.6.0 actually move the S0ix/CSE firmware blocker? That is the entire
-  reason for doing this, and it is **not yet answered**. S0ix residency reads
-  0 post-update, but the machine has not been through an `s2idle` cycle since
-  boot, so that number is meaningless so far. Needs a real suspend test before
-  any conclusion. See [../power/s0ix-never-entered.md](../power/s0ix-never-entered.md).
-- The BIOS region update did not touch ME/CSE firmware. If the S0ix blocker is
-  genuinely CSE-side, a BIOS-only update may not be able to fix it at all, and
-  a separate CSE firmware drop would be needed.
+- Will Dell publish a CSE firmware capsule, or list DX13260 on LVFS at all?
+  That is now the single remaining lever for S0ix.
+- Whether 1.6.0 changed anything else worth noticing. The panel wedge did not
+  reproduce on the post-update suspend, but `xe.enable_psr=1` from 2026-08-05
+  is the more likely reason and one clean cycle proves little either way.
 
 ## For a bug report
 

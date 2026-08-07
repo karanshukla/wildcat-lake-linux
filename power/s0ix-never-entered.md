@@ -451,11 +451,60 @@ S0i2/S0i3.
   currently unmeasurable.
 - Whether Dell ships a BIOS/ME firmware update that changes this behavior.
   This is now confirmed as the only remaining lever, nothing left to try from
-  the OS side. **Checked 2026-08-05 on both `lvfs` and `lvfs-testing`:
-  `No updates available`, System Firmware listed under "no available firmware
-  updates" on both channels.** Nothing published to try, beta or otherwise.
-  Re-check periodically; `lvfs-testing` was disabled again afterward so a
-  routine `fwupdmgr update` can't pull a beta BIOS unintentionally (that would
-  break TPM2 LUKS auto-unlock and is typically not downgradable). Otherwise, another entry for the early-silicon pile like
+  the OS side. Checked 2026-08-05 on both `lvfs` and `lvfs-testing`:
+  `No updates available` on both channels. DX13260 has zero LVFS releases at
+  all. Otherwise, another entry for the early-silicon pile like
   [s3-deep-sleep-hang.md](s3-deep-sleep-hang.md) and
   [s2idle-rapid-resume-hang.md](s2idle-rapid-resume-hang.md).
+
+## BIOS 1.6.0 tested 2026-08-06: does not fix it, and could not have
+
+BIOS was updated 1.3.0 -> 1.6.0 by extracting Dell's Windows-only `.exe` and
+staging the signed image as a UEFI capsule-on-disk, no Windows needed. See
+[../firmware/bios-update-capsule-on-disk.md](../firmware/bios-update-capsule-on-disk.md).
+The flash succeeded on the first attempt (`last_attempt_status 0`,
+`fw_version 67072` = `0x010600`, `dmidecode` 1.6.0 dated 07/16/2026).
+
+Measured immediately after, with `power/measure-s0ix.sh 90`:
+
+```
+PM: suspend entry (s2idle)   22:32:07
+PM: suspend exit             22:33:38     (91 s, clean, no wedge)
+
+S0i2.0  0     S0i2.1  0     S0i2.2  0
+slp_s0_residency_usec        0
+Package C10  4,555,167 -> 95,615,798
+```
+
+Cores reach CC10 as always. The platform still enters no S0ix substate. **No
+change from 1.3.0.**
+
+This is not evidence against root cause #3. It is what root cause #3 predicts.
+Dell's `platform.ini` for this package sets:
+
+```
+[Region]   BIOS=1  GbE=0  ME=0  EC=0  DESC=0  Platform_Data=0
+[UpdateEC] Flag=0
+```
+
+so the update wrote the BIOS region only and never touched CSE firmware.
+Confirmed afterwards: ESRT entry1 `fw_version` is unchanged at 1345.
+
+### The CSE firmware is separately updatable, and that is the lever
+
+ESRT entry1, GUID `865d322c-6ac7-4734-b43e-55db5a557d63`, is the Intel ME/CSE
+firmware. `/sys/class/mei/mei0/fw_ver` reports `21.50.1.1345`, and entry1's
+`fw_version` is `1345`. The build numbers match exactly.
+
+fwupd lists it as `Updatable`, "Updated via capsule-on-disk", with
+`lowest_supported_fw_version 1000`. So the mechanism to update CSE firmware on
+this machine exists and works. What is missing is a CSE capsule to feed it:
+Dell's BIOS package deliberately excludes the ME region, and there is no LVFS
+release for this model.
+
+(`mei0/fw_ver` reports three partition versions, `21.50.1.1345`,
+`21.50.1.1345` and `21.50.1.1375`. Which of those ESRT tracks is not
+established; the match on 1345 is the operational one.)
+
+That makes the ask to Dell specific and small: publish a CSE firmware capsule,
+or ship this model on LVFS at all. Everything on the host side already works.
