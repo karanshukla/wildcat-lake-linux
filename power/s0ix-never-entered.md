@@ -351,11 +351,56 @@ it.** CSE is now confirmed as the binding blocker across three independent
 measurements, on two kernels, with the display power path in two materially
 different states. That's a better bug report to Dell than the original.
 
+## Corroboration: Intel's own S0ix Selftest Tool agrees
+
+Ran [intel/S0ixSelftestTool](https://github.com/intel/S0ixSelftestTool)
+(`./s0ix-selftest-tool.sh -s`) independently of the hand-rolled
+`measure-s0ix.sh` above, three times: 2026-08-05 07:23 and 07:26 (alongside
+the display-engine test), and fresh on 2026-08-06 with kernel 7.1.6. Same
+conclusion every time, from Intel's own diagnostic script rather than a
+custom one:
+
+```
+Low Power S0 Idle is:1
+Your system supports low power S0 idle capability.
+
+S0ix substate residency before S2idle:
+  0 0 0
+
+Turbostat output:
+SYS%LPI
+0.00
+0.00
+
+The system does not support the Pkg%pc2/pc3/pc6/pc8.
+Your system did not achieve PC2 state or PC2 residency is low.
+```
+
+The 2026-08-06 run also captured what the two 2026-08-05 runs didn't: the
+active `cpuidle` driver and per-state sysfs dump. `current_driver` reads
+`intel_idle`, but the state table underneath is ACPI-sourced
+(`C1_ACPI`/`C2_ACPI`/`C3_ACPI`, descriptions `ACPI FFH MWAIT 0x0/0x21/0x60`),
+not `intel_idle`'s normal native table. Consistent with
+[intel-idle-no-wildcat-lake-entry.md](intel-idle-no-wildcat-lake-entry.md):
+no static table entry for model `0xD5`, so `intel_idle` falls back to
+building its state table from ACPI `_CST` instead.
+
+Logged for next time: the two 2026-08-05 runs' archived `.log` files cut off
+mid-way, both ending at the same line (`Check what's the CPU idle driver
+status:`) with nothing after it. Not a script crash, the tool's
+`debug_no_pc2()` function (`s0ix-selftest-tool.sh:743,745`) pipes `cat
+current_driver` and `grep .../state*/*` straight to the terminal instead of
+through the script's own `log_output()` wrapper, so that output was only ever
+visible live, never saved to the log. If a future run needs that section
+preserved, wrap the invocation in `tee` rather than relying on the tool's own
+archiving.
+
 ## For a bug report
 
 Easiest reproduction is `measure-s0ix.sh` in this directory, which automates
-the delta method below (`sudo ./measure-s0ix.sh 90`). Manual steps, to Dell
-(BIOS/ME firmware):
+the delta method below (`sudo ./measure-s0ix.sh 90`), or
+`S0ixSelftestTool`'s `s0ix-selftest-tool.sh -s` for Intel's own equivalent
+check. Manual steps, to Dell (BIOS/ME firmware):
 
 1. `sudo cat /sys/kernel/debug/pmc_core/substate_requirements`, note
    `CSE_VNN_REQ_STS`/`CSE_PGD0_PG_STS` values.
