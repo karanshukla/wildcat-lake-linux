@@ -1,6 +1,7 @@
 # Updating the BIOS with no LVFS release: UEFI capsule-on-disk
 
-**Status:** Capsule staged 2026-08-06 22:08 EDT, result pending first reboot.
+**Status:** Worked. BIOS 1.6.0 flashed 2026-08-06 22:29 EDT on the first
+attempt, from Linux, no Windows involved.
 
 Dell publishes BIOS 1.6.0 for the XPS 13 DX13260 as a Windows `.exe` only.
 There is no LVFS release for this model at all (zero entries), so
@@ -134,26 +135,41 @@ wall between 1.3.0 and 1.6.0.
 Pre-flight: AC connected (`[AC_Adapter] BatteryBound=10`), and ESP needs about
 18 MB free.
 
-## Verification after reboot
+## Result
 
-```bash
-cat /sys/firmware/efi/esrt/entries/entry0/fw_version            # want 67072
-cat /sys/firmware/efi/esrt/entries/entry0/last_attempt_status   # want 0
+Flashed on the first attempt. After reboot:
+
+```
+entry0  fw_version            67072      (0x010600 = 1.6.0)
+        last_attempt_version  67072
+        last_attempt_status   0          (success)
+
+$ sudo dmidecode -s bios-version       -> 1.6.0
+$ sudo dmidecode -s bios-release-date  -> 07/16/2026
 ```
 
-`CAPSULE_RESULT_VAR_SUPPORTED` is set, so a rejection is readable rather than
-silent. A non-zero `last_attempt_status` distinguishes "firmware rejected the
-capsule framing" from "firmware rejected the payload".
+`/boot/efi/EFI/UpdateCapsule/` is empty and `OsIndications` is cleared, so the
+firmware consumed the capsule and tidied up after itself, exactly as the spec
+says it should.
+
+ESRT entry1 (1345) and entry2 (0) are unchanged, which confirms `[Region]`
+was honoured: only the BIOS region was written, ME and EC untouched.
+
+**fwupd's simple capsule form is sufficient on this platform.** No hand-built
+FMP structure was needed, even though `FMP_CAPSULE_SUPPORTED` is advertised.
+`CapsuleGuid` = the ESRT `fw_class` is enough. That answers the main open
+question from the staging attempt.
 
 ## Remaining questions
 
-- Does this firmware's FMP handler require the full FMP capsule structure
-  (capsule header + FMP capsule header + image header), or is fwupd's simpler
-  form, where `CapsuleGuid` is just the ESRT `fw_class`, sufficient? fwupd's
-  simple form is what Dell ships on LVFS for other models, so it is likely
-  fine, but it is untested on this platform until the first reboot.
 - Does 1.6.0 actually move the S0ix/CSE firmware blocker? That is the entire
-  reason for doing this. Unknown until it lands.
+  reason for doing this, and it is **not yet answered**. S0ix residency reads
+  0 post-update, but the machine has not been through an `s2idle` cycle since
+  boot, so that number is meaningless so far. Needs a real suspend test before
+  any conclusion. See [../power/s0ix-never-entered.md](../power/s0ix-never-entered.md).
+- The BIOS region update did not touch ME/CSE firmware. If the S0ix blocker is
+  genuinely CSE-side, a BIOS-only update may not be able to fix it at all, and
+  a separate CSE firmware drop would be needed.
 
 ## For a bug report
 
