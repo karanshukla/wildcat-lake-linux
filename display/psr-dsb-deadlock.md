@@ -170,6 +170,45 @@ No fix merged as of this writing. Timeline described by Intel/Dell tuning as
 weeks-to-months out given this is A0 silicon. Worth checking for an upstream fix on
 each kernel update — see the `journalctl -k` check above.
 
+## Panel T-CON firmware: considered 2026-08-06, declined
+
+Dell's Drivers & Downloads page lists an "LGD Touch Panel Firmware Update
+Utility" (06 Aug 2026, marked Critical). The corresponding package is
+`OneClickUpdater_v2.1.0.7_PW123_20260707.zip`, and it does target this exact
+panel: `Config.ini` sets `SPCase=LP134WQA-SPB1`, and the panel's EDID
+manufacturer ID `30 e4` decodes to `LGD` with descriptor string `LP134WQ`.
+
+It is a T-CON (timing controller) firmware update pushed over the eDP AUX
+channel via an Analogix bridge (`AnxAuxCommunication.dll`), payload
+`Bin/F979_POL_COMP_LOCKMODE_FINAL_260707.bin` (128 KB). Plausibly relevant in
+principle, since PSR and LOBF are negotiated between source and sink, and the
+sink is the T-CON.
+
+**Declined, deliberately.** Reasons, in order of weight:
+
+1. The wedge no longer reproduces since `xe.enable_psr=1`. Risking the panel to
+   fix something that currently looks fixed is a bad trade.
+2. No stated defect, no release notes. The bundled SOP deck only says "run
+   tool, see PASS, restart and check the screen".
+3. The SOP is for the **wrong panel**: its title reads `LP163WU1-SPB1` (a 16"
+   model) while the package targets `LP134WQA-SPB1`. It is an internal rework
+   kit reused across models, not a validated per-model release.
+4. `Config.ini` is `UpdateMode=FullUpdate` with `AutoRun=1`, so it begins
+   flashing on launch with no confirmation step.
+5. No signature, verification, result-reporting or rollback story, unlike the
+   BIOS capsule path in
+   [../firmware/bios-update-capsule-on-disk.md](../firmware/bios-update-capsule-on-disk.md),
+   where a bad payload is simply rejected and `last_attempt_status` records
+   why. Here a failed write means a dead panel.
+6. Windows-only, so running it would require the Windows-To-Go detour that the
+   capsule route made unnecessary.
+
+If panel firmware is ever worth revisiting, the thing to look for is a
+Dell-signed capsule rather than this rework tool. ESRT entry2
+(`ba5c5e4b-d6b8-9845-a498-d25dbb4d2c65`, `fw_version 0`, flagged `Updatable`)
+is still unidentified and a panel is a plausible fit; that would be the same
+low-risk verified path.
+
 ## For a bug report
 
 - Hardware: Dell XPS 13 DX13260, Wildcat Lake/Panther Lake, GPU device ID `fd80`, stepping A0
