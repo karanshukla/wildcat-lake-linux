@@ -49,7 +49,8 @@ timeline as of writing (2026-07-25).
 | Face unlock | AuthFace shipped with no anti-spoofing | Three layers shipped: motion-liveness gate, screen-spoofing confirmed blocked by IR-illuminator physics (not software), and physical-USB camera pinning (frame-injection defense); printed-photo resistance still open | [face-unlock-authface/liveness-and-antispoof.md](face-unlock-authface/liveness-and-antispoof.md) |
 | Face unlock | KWallet doesn't auto-unlock after login (reproduced with face-auth disabled too) | Unresolved, accepted — confirmed known upstream KDE bug (kwalletd D-Bus-activation race vs. PAM credential handoff, not biometric auth or local config), no local fix pursued | [face-unlock-authface/kwallet-not-auto-unlocking.md](face-unlock-authface/kwallet-not-auto-unlocking.md) |
 | NPU (general) | Driver/tooling maturity for NPU workloads | Unresolved, months-out | [known-issues.md](known-issues.md) |
-| Disk | TPM2-sealed LUKS auto-unlock | Active, working | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
+| Disk | TPM2-sealed LUKS auto-unlock | Active, working. Corrected 2026-08-06: seal is PCR **7 only**, not 0+7, and `crypttab` needs no `tpm2-device=auto` — both verified against `luksDump` | [disk-encryption/tpm2-luks.md](disk-encryption/tpm2-luks.md) |
+| Firmware | BIOS stuck at 1.3.0, Dell ships 1.6.0 as a Windows `.exe` and DX13260 has zero LVFS releases | Update path found 2026-08-06: the platform fully supports UEFI capsule-on-disk (`OsIndicationsSupported = 0x7f`), so `fwupdtool install-blob` stages Dell's own signed image. Capsule staged, result pending first reboot | [firmware/bios-update-capsule-on-disk.md](firmware/bios-update-capsule-on-disk.md) |
 | Shell | No tab-completion in Ghostty for unpackaged CLI tools (e.g. `gaze`) | Worked around (stock `bash-completion` + custom scripts); predictive ghost-text (`ble.sh`) tried, reverted — unstable with raw-mode TUI apps | [shell/bash-completion-setup.md](shell/bash-completion-setup.md) |
 
 See [known-issues.md](known-issues.md) for everything still open.
@@ -66,6 +67,7 @@ desktop/                   raw KDE panel/widget config snapshot (restore point, 
 face-unlock-biopass/       biopass fork: resident daemon + NPU backend (superseded by AuthFace)
 face-unlock-authface/      AuthFace fork: NPU backend, motion liveness gate, screen-spoof physics finding
 disk-encryption/           TPM2 LUKS auto-unlock
+firmware/                  BIOS update via UEFI capsule-on-disk (no LVFS release for this model)
 power/                     S3 deep-sleep hang (reverted to s2idle); s2idle rapid-resume hang
                            (+ reproduce-panel-wedge.sh, on-demand reproducer);
                            S0ix substates never entered (+ measure-s0ix.sh, delta harness);
