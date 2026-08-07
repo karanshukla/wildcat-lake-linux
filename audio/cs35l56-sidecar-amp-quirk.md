@@ -320,6 +320,45 @@ live — it has to be rebuilt as a kernel module and reloaded. Full mechanism:
 Verified installed and signed: `/lib/modules/7.1.5-201.fc44.x86_64/extra/snd-soc-sof-sdw.ko.xz`,
 correct `vermagic`, `sig_id: PKCS#7` matching the enrolled MOK fingerprint.
 
+## On BIOS update: audio disappears entirely, and it isn't the audio stack
+
+A BIOS/firmware update clears MOK enrollment, because MOK lives in UEFI NVRAM
+and the flash reinitialises it. With Secure Boot on, this module then refuses
+to load and **no sound card is registered at all**:
+
+```
+$ aplay -l
+no soundcards found...
+
+$ mokutil --list-enrolled | grep -c Subject:
+1                       # Fedora's cert only; the DKMS signing key is gone
+```
+
+The misleading part is that nothing looks like a signing failure. SOF boots,
+the CS35L56 and CS42L43 modules all load, and there is no "key was rejected"
+message. The only real clue is the stock no-quirk message:
+
+```
+sof-audio-pci-intel-ptl: No SoundWire machine driver found for the
+  ACPI-reported configuration: link 2 mfg_id 0x01fa part_id 0x4243 version 0x3
+```
+
+which is exactly the pre-fix symptom this whole document exists to solve, so
+it is easy to misread as the DKMS fix having broken or regressed.
+
+Nothing is actually lost. The built module and both key files survive on disk.
+Re-enrol and reboot:
+
+```bash
+sudo mokutil --import /etc/pki/wildcat-lake-mok/MOK.der   # sets a one-time password
+sudo reboot                                                # MokManager: Enroll MOK -> Continue -> Yes -> password
+```
+
+Hit and fixed 2026-08-06 during the 1.3.0 -> 1.6.0 update; see
+[../firmware/bios-update-capsule-on-disk.md](../firmware/bios-update-capsule-on-disk.md).
+Verify with `mokutil --list-enrolled | grep -c Subject:` returning 2, and both
+`spi-cs35l56-left` and `spi-cs35l56-right` appearing in `journalctl -k`.
+
 ## On kernel update
 
 DKMS auto-rebuilds this against every new kernel (Fedora's

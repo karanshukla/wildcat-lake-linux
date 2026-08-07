@@ -160,6 +160,53 @@ FMP structure was needed, even though `FMP_CAPSULE_SUPPORTED` is advertised.
 `CapsuleGuid` = the ESRT `fw_class` is enough. That answers the main open
 question from the staging attempt.
 
+## Gotcha: the BIOS update wipes MOK enrollment, which silently kills audio
+
+Budget one extra reboot for this on any future BIOS update.
+
+MOK (Machine Owner Key) enrollment lives in UEFI NVRAM, and the flash
+reinitialises it. After updating to 1.6.0 and re-enabling Secure Boot,
+`mokutil --list-enrolled` returned exactly one certificate, Fedora's. The
+`CN=wildcat-lake-linux DKMS signing key` used to sign the CS35L56 sidecar-amp
+module (see [../audio/cs35l56-sidecar-amp-quirk.md](../audio/cs35l56-sidecar-amp-quirk.md))
+was gone.
+
+Symptom is not an obvious signing error. It presents as **no sound card at
+all**:
+
+```
+$ aplay -l
+no soundcards found...
+
+$ journalctl -k -b | grep SoundWire
+sof-audio-pci-intel-ptl 0000:00:1f.3: No SoundWire machine driver found for
+  the ACPI-reported configuration: link 2 mfg_id 0x01fa part_id 0x4243 version 0x3
+```
+
+The SOF/SoundWire stack loads normally and the codec modules are all present,
+so nothing looks rejected. The out-of-tree `snd_soc_sof_sdw` simply never
+loads, so the ACPI configuration matches no machine driver and no card is
+registered. There is no "key was rejected by service" line to grep for.
+
+Nothing is lost. The module and both key files survive on disk
+(`/etc/pki/wildcat-lake-mok/MOK.{der,priv}`); only the firmware's record of
+trusting them is cleared. Re-enrol and reboot:
+
+```bash
+sudo mokutil --import /etc/pki/wildcat-lake-mok/MOK.der   # sets a one-time password
+sudo reboot                                                # MokManager: Enroll MOK -> Continue -> Yes -> password
+```
+
+Confirmed fixed 2026-08-06 22:51: two certificates enrolled, card back as
+`sofsoundwire` / `DellInc.-XPS13DX13260-1.6.0-0865D8`, both
+`spi-cs35l56-left` and `-right` up on
+`cs35l56-b2-dsp1-misc-10280e53-spkid1.wmfw`.
+
+Note the TPM2 LUKS seal needed **no** action, because it is PCR 7 only and
+PCR 7 tracks Secure Boot state: turning Secure Boot back on restored PCR 7 to
+its original value and the seal validated again by itself. See
+[../disk-encryption/tpm2-luks.md](../disk-encryption/tpm2-luks.md).
+
 ## Does it fix S0ix? No, and it could not have
 
 Tested the same night with `../power/measure-s0ix.sh 90`. A clean 91-second
