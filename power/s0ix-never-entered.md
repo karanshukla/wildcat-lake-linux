@@ -526,3 +526,22 @@ established; the match on 1345 is the operational one.)
 
 That makes the ask to Dell specific and small: publish a CSE firmware capsule,
 or ship this model on LVFS at all. Everything on the host side already works.
+
+### The BIOS lever is now exhausted
+
+Dell's Drivers & Downloads page for DX13260 (checked 2026-08-06) lists exactly
+one BIOS entry, published 28 Jul 2026, and it is **1.6.0**, the version now
+installed. The 12-day gap between the image's build date (07/16/2026, per
+`dmidecode`) and its publication date accounts for the apparent mismatch.
+
+So this is no longer "waiting on a Dell BIOS update". The newest BIOS Dell
+ships has been applied and it does not change S0ix. Of the 22 downloads on
+that page, none contains CSE firmware: the "Intel Management Engine Components
+Installer", "Intel Trusted Execution Engine Driver" and "Intel Software
+Integrated Package" are all Windows host-side drivers, equivalent to the
+in-kernel `mei` driver, not firmware images. On Dell systems CSE firmware
+normally ships inside the BIOS package, and this one deliberately excludes it.
+
+There is nothing further to try from either the OS or the published-firmware
+side. This now needs Dell or Intel to publish something that does not currently
+exist.
