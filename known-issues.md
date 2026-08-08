@@ -9,11 +9,14 @@ Disabling VRR/adaptive sync crashes the Xe3 KMS driver. Confirmed as a known
 upstream work-in-progress issue (not something local config can work around).
 Watch upstream `xe` driver changelogs on kernel updates.
 
-Separately, and possibly related: VRR reports capable and enabled but the
-panel's real refresh rate never modulates, confirmed via direct kernel vblank
-measurement across both idle desktop and fullscreen video. Root cause not
-isolated yet, confounded by a documented KWin bug (open windows/terminals
-breaking VRR detection). Full investigation:
+Separately, and possibly related: adaptive sync is never switched on at all.
+The panel and eDP link are genuinely capable (DPCD `MSA_TIMING_PAR_IGNORED`
+set, EDID range 30-120Hz, DRM connector `vrr_capable = 1`) and KWin correctly
+decides to use it, but the CRTC's `VRR_ENABLED` property stays `0`. Narrowed
+2026-08-07 to one of two layers between KWin's decision and the atomic commit,
+not distinguished further because both remaining candidates are kernel-side.
+The earlier "capable and enabled but never modulates" framing was wrong: flat
+120Hz is the expected result for VRR being off. Full investigation:
 [display/vrr-not-engaging.md](display/vrr-not-engaging.md).
 
 ## NPU acceleration — inference works, but crashes a real daemon process

@@ -1,10 +1,19 @@
-# Display: VRR/adaptive sync reports capable and enabled, but panel refresh never modulates
+# Display: VRR/adaptive sync is never switched on, so the panel never modulates
 
-**Status:** Unresolved. Two independent measurements confirm the physical panel
-refresh never leaves 120Hz, but the video-content test is confounded by a
-documented KWin Wayland bug, so root cause isn't isolated between "hardware/driver
-doesn't do this" and "KWin's VRR heuristic is broken by other open windows."
-Investigated 2026-07-26.
+**Status:** Unresolved, but relocalized on 2026-08-07. The panel and the eDP
+link are genuinely VRR-capable, confirmed at three independent layers. The
+compositor correctly decides to use adaptive sync. The CRTC's `VRR_ENABLED`
+property nevertheless stays `0`, so the flat-120Hz measurements below are the
+*expected* result for VRR being off and never showed a modulation failure at
+all. Root cause is now narrowed to one of two layers between KWin's decision
+and the atomic commit. Decision 2026-08-07: not chasing further, both remaining
+candidates are kernel-side and the fix is to wait for driver maturity.
+
+Originally investigated 2026-07-26 under the title "reports capable and enabled
+but panel refresh never modulates." That framing was wrong: it was never
+enabled. The 2026-07-26 material is kept below as the measurement record, see
+[the 2026-08-07 section](#2026-08-07-vrr_enabled-is-0-the-whole-time-which-invalidates-the-framing-above)
+for what actually changed.
 
 ## Symptom
 
@@ -158,19 +167,179 @@ Kernel 7.1.6 carries `drm/i915/vrr: require valid min/max vfreq for VRR`, but
 that's div-by-zero hardening for invalid EDID ranges and this panel reports a
 valid 30-120.
 
+## 2026-08-07: `VRR_ENABLED` is 0 the whole time, which invalidates the framing above
+
+Rebuilt `vblank_watch.py` (it was the blocker noted above) and this time also
+read the CRTC's `VRR_ENABLED` DRM property alongside the vblank timing. That
+property is what actually answers "did the compositor turn adaptive sync on for
+this commit", and no earlier run had read it.
+
+It is `0`. It was `0` for every sample of a 62s run, including ~40s with a
+fullscreen client presenting at exactly 40fps.
+
+That retroactively explains 2026-07-26. A panel pinned at 120.00Hz is the
+*correct* behaviour when VRR is off. Those runs never demonstrated a modulation
+failure, they demonstrated nothing at all. The mpv#10982 "terminal breaks VRR"
+confound the doc leaned on is also irrelevant here: that bug is about KWin's
+repaint scheduling, and this never gets as far as scheduling.
+
+### The panel and the eDP link are genuinely capable
+
+Three independent layers, none of them the compositor:
+
+| Layer | Check | Result |
+|---|---|---|
+| Sink DPCD | `0x007` bit 6 `MSA_TIMING_PAR_IGNORED` | Set (`0x007 = 0xc0`). Sink will ignore MSA timing, the eDP prerequisite for adaptive sync |
+| EDID | Display Range Limits descriptor | `30-120 Hz V`, `203-203 kHz H`, "supports continuous frequencies" flag set. LGD `LP134WQ` |
+| Kernel `xe` | connector `eDP-1` `vrr_capable` property | `1` |
+
+`vrr_capable` is not a rubber stamp: in the shared i915/xe display code
+`intel_vrr_is_capable()` requires the VBT `vrr` flag for eDP, *plus* that DPCD
+bit, *plus* a monitor range spanning more than 10Hz. All three passed.
+
+Note `vrr_capable` is a DRM connector property, not a sysfs file. Its absence
+from `/sys/class/drm/card0-eDP-1/` means nothing, DRM only exports a fixed
+handful of attributes there.
+
+### KWin's decision is also correct
+
+Under `Automatic`, KWin's `src/compositor.cpp`:
+
+```cpp
+const bool wantsAdaptiveSync = activeWindow && activeWindow->frameGeometry().intersects(primaryView->viewport()) && activeWindow->wantsAdaptiveSync();
+const bool vrr = (output->capabilities() & BackendOutput::Capability::Vrr) && (output->vrrPolicy() == VrrPolicy::Always || (output->vrrPolicy() == VrrPolicy::Automatic && wantsAdaptiveSync));
+```
+
+`Window::wantsAdaptiveSync()` is just `rules()->checkAdaptiveSync(isFullScreen())`,
+and the capability bit comes from exactly the property confirmed above
+(`drm_output.cpp`: `if (m_connector->vrrCapable.isValid() && m_connector->vrrCapable.value())`).
+
+Queried KWin's own scripting API while the fullscreen client was up. It
+reported `active=ffplay fullScreen=true output=eDP-1 geom=1707x1067`, which is
+the full logical size of eDP-1 at scale 1.5. Every branch of that condition was
+satisfied, so KWin computed `vrr == true`.
+
+(KWin script `print()` output goes to a debug category that is disabled by
+default and never reaches the journal. Reporting over `callDBus` to a
+non-existent service and watching with `dbus-monitor` works, the message is
+visible on the bus regardless of whether the destination exists.)
+
+### So it is dropped below the decision point
+
+The rest of the chain is short:
+
+```cpp
+// compositor.cpp
+if (vrr) { frame->setPresentationMode(tearing ? PresentationMode::AdaptiveAsync : PresentationMode::AdaptiveSync); }
+
+// drm_pipeline.cpp
+if (m_pending.crtc->vrrEnabled.isValid()) {
+    commit->setVrr(m_pending.crtc, m_pending.presentationMode == PresentationMode::AdaptiveSync
+                                || m_pending.presentationMode == PresentationMode::AdaptiveAsync);
+}
+
+// drm_commit.cpp
+void DrmAtomicCommit::setVrr(DrmCrtc *crtc, bool vrr) { addProperty(crtc->vrrEnabled, vrr ? 1 : 0); }
+```
+
+Input correct, output `0`. Two candidates, not distinguished:
+
+| Candidate | Status |
+|---|---|
+| `PresentationMode::AdaptiveSync` never reaches the pipeline's `m_pending.presentationMode` (KWin bug) | Untested |
+| The atomic commit carrying `VRR_ENABLED=1` fails and KWin silently falls back to VSync (`xe` bug) | Untested. Kernel log has zero drm/`xe` errors this boot, but KWin probes with `TEST_ONLY` commits and those don't log, so this is not evidence either way |
+
+### The test that would distinguish them, deliberately not run
+
+Set `vrrPolicy` back to `Always`. That collapses the compositor condition to
+just the capability bit, removing `activeWindow` and fullscreen from the
+picture entirely. Three outcomes, each pointing somewhere different:
+
+| Result | Meaning |
+|---|---|
+| `VRR_ENABLED` → 1, vblank modulates | `Automatic`'s per-frame path is broken, hardware fine, `Always` is a usable workaround |
+| `VRR_ENABLED` → 1, vblank still pinned 120.00 | Driver accepts the property but the timing generator never varies. Genuine display-code bug |
+| `VRR_ENABLED` stays 0 | `xe` rejects the commit and KWin falls back. Kernel bug |
+
+The 2026-07-26 runs were taken under `Always` and saw flat 120Hz, but since
+they never read `VRR_ENABLED` they cannot distinguish row 2 from row 3.
+
+Not run on 2026-08-07 because reverting `Always` afterwards is exactly the
+disable path recorded in [../known-issues.md](../known-issues.md) as crashing
+the `xe` driver. Enabling is the safe direction, reverting is not. Both
+remaining candidates are kernel-side anyway, so the practical answer is to wait
+for driver maturity rather than to buy a workaround at the cost of a crash
+risk.
+
+### Prior art: Dell/Omarchy on XPS 14/16, and why backporting is probably the wrong lever
+
+Dell's ["Year of the Linux Laptop: Omarchy on XPS"](https://www.dell.com/en-us/blog/year-of-the-linux-laptop-omarchy-on-xps/)
+describes a Panther Lake enablement effort on the XPS 14 and 16 that lists
+"Display VRR, panel self-refresh, power optimization, performance tuning, WiFi,
+the NPU, OpenVINO GenAI" as all having "needed work", delivered as roughly 20
+backports in a temporary `linux-ptl` package "until Linux 7.0 releases".
+
+Tempting to treat this the way the CS35L56 audio quirk was treated, i.e. port
+the patch downstream. Two reasons that is probably not the move here:
+
+- **The kernel is already newer.** Those backports targeted a pre-7.0 tree.
+  This machine is on 7.1.6, so anything that landed in mainline by 7.0 is
+  already present. Backporting would only help for patches that never landed,
+  which needs checking before it's worth any effort.
+- **The compositor differs, and that is exactly where the evidence points.**
+  Omarchy is Hyprland. The failure documented above sits between KWin's
+  decision and the DRM atomic commit. A Hyprland (or any non-KWin) session on
+  this same kernel exercises a completely different userspace path to the same
+  `VRR_ENABLED` property.
+
+That last point makes a live-USB or spare-session Hyprland test the cheapest
+remaining discriminator, and a non-destructive one, unlike the `Always` test
+above. If `VRR_ENABLED` reaches 1 under Hyprland on kernel 7.1.6, this is a
+KWin bug and the kernel is fine. If it stays 0 there too, it is the shared
+i915/xe display code and the bug report goes to intel-gfx.
+
+Also worth noting the hardware is not the same: that effort targeted XPS 14/16,
+this is an XPS 13 DX13260 on Wildcat Lake stepping A0. The blog does not claim
+VRR ended up working, only that it was worked on.
+
+### Tooling
+
+`tools/vblank_watch.py` is committed this time. It polls `VRR_ENABLED` while
+measuring, so the two can never be conflated again:
+
+```
+sudo ./display/tools/vblank_watch.py              # one-shot VRR property dump
+sudo ./display/tools/vblank_watch.py --watch 60   # 60s measurement on pipe A
+```
+
+It deliberately avoids `DRM_IOCTL_MODE_GETCONNECTOR`: called with
+`count_modes=0` that forces a full connector re-probe (EDID re-read, link
+retrain), which this panel has a history of not surviving. Connector names come
+from sysfs instead.
+
 ## For a bug report
 
 - Hardware: Dell XPS 13 DX13260, Wildcat Lake/Panther Lake, GPU device ID
   `fd80`, stepping A0
 - Driver: `xe` KMS, kernel `7.1.4`
 - Compositor: KWin 6.7.3, Wayland, Plasma 6
-- `eDP-1` confirmed VRR-capable (30-120Hz DPCD range via debugfs `vrr_range`)
-  and KWin's VRR policy set to `Always`
-- Direct `DRM_IOCTL_WAIT_VBLANK` measurement on pipe A shows flat 120Hz across
-  both a genuinely idle/locked screen and a fullscreen exactly-30fps synthetic
-  video, contrary to expected VRR behavior
-- `xe.enable_psr=0 xe.enable_psr2_sel_fetch=0 xe.enable_panel_replay=0` boot
-  args are set, unconfirmed whether that's connected
+- `eDP-1` confirmed VRR-capable at three layers: DPCD `0x007` bit 6
+  `MSA_TIMING_PAR_IGNORED` set, EDID Display Range Limits `30-120 Hz V` with the
+  continuous-frequency flag, and DRM connector property `vrr_capable = 1`
+  (debugfs `vrr_range` agrees: `Min: 30`, `Max: 120`)
+- **The actual defect: CRTC `VRR_ENABLED` never leaves `0`.** Held at `0` for
+  all 62s of a run including ~40s with a fullscreen 40fps client, with KWin's
+  scripting API concurrently reporting that client as
+  `active=… fullScreen=true output=eDP-1` under `vrrPolicy=Automatic`, which
+  satisfies every branch of the condition in KWin's `src/compositor.cpp`
+- Flat 120.00Hz vblank measurements are a *consequence* of that, not an
+  independent symptom. Do not report them as a modulation failure
+- Not yet distinguished: KWin never propagating `PresentationMode::AdaptiveSync`
+  to `DrmPipeline::m_pending.presentationMode`, versus `xe` rejecting the atomic
+  commit that carries `VRR_ENABLED=1` and KWin falling back. No drm/`xe` errors
+  in the kernel log, but KWin's `TEST_ONLY` probes don't log
+- Boot args at time of measurement: `xe.enable_psr=1 xe.enable_psr2_sel_fetch=0
+  xe.enable_panel_replay=0`. PSR1 active, LOBF reported `disabled`
 - Known related upstream/KDE bugs, not confirmed as the same root cause:
   [mpv-player/mpv#10982](https://github.com/mpv-player/mpv/issues/10982),
   [bugs.kde.org#443872](https://bugs.kde.org/show_bug.cgi?id=443872) (fixed),
@@ -178,16 +347,21 @@ valid 30-120.
 
 ## Remaining questions
 
-- Re-run the fullscreen video test with zero other windows or terminals open
-  (start the logger, then fully close the terminal before going fullscreen) to
-  separate the KWin-terminal-breaks-VRR confound from a genuine hardware/driver
-  gap.
-- Whether re-enabling `xe.enable_panel_replay` alone (leaving PSR/PSR2
-  selective-fetch off) restores VRR modulation, at the cost of risking the DSB
-  deadlock again under GPU load.
+- Which of the two candidates above is actually dropping the request. The
+  `Always` test in the table above decides it, at the cost of a crash risk on
+  revert.
+- Whether `xe` is rejecting the atomic commit at all. A `TEST_ONLY` commit
+  carrying `VRR_ENABLED=1`, issued directly rather than through KWin, would
+  answer this without touching compositor config, but needs DRM master so it
+  means taking the display away from KWin on a spare VT.
 - Whether KWin's VRR implementation does anything for plain idle-desktop power
   saving at all, on any hardware, or whether "idle drops to 30Hz" is simply not
-  a feature it provides today regardless of this laptop's specific bugs.
+  a feature it provides today regardless of this laptop's specific bugs. Note
+  the compositor condition keys off the *active* window, not off idleness, which
+  suggests it does not.
 - Whether this is the same underlying `xe` driver gap as the existing
   crash-on-disable VRR issue in [known-issues.md](../known-issues.md), or a
   fully separate problem.
+- The 2026-07-26 candidate "`xe.enable_psr=0 …` collaterally killed the
+  vblank-stretching path" is now moot as stated. VRR was never enabled in either
+  configuration, so the boot args were never the variable under test.
