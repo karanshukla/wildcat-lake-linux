@@ -46,6 +46,13 @@ a hard, unresumable hang. This is consistent with the general pattern on this
 hardware (see [known-issues.md](../known-issues.md)): marketing support claims
 diverging from actual current Linux support maturity.
 
+The `thermald` observation above was accurate when written and is left as
+recorded, but it has since been run down: the daemon was exiting on a missing
+model-table entry, fixed locally 2026-08-07 (see
+[thermald-no-wildcat-lake-entry.md](thermald-no-wildcat-lake-entry.md)). It
+remains a fair illustration of the early-silicon point, and it does not bear on
+this doc's S3 conclusion either way.
+
 ## Fix
 
 Revert back to the default `s2idle`:

@@ -217,10 +217,17 @@ Fourth piece of Intel tooling found not to know model 0xD5:
 | Tool | Symptom | Status |
 |---|---|---|
 | `intel_lpmd` | "Platform not supported yet", exits on every boot | [intel/intel-lpmd#123](https://github.com/intel/intel-lpmd/issues/123), fix proposed in [#124](https://github.com/intel/intel-lpmd/pull/124) |
-| `thermald` | "Unsupported cpu model or platform" | Not filed |
+| `thermald` | "Unsupported cpu model or platform", exits on every boot | **Fixed locally 2026-08-07** (one-line table entry, built + drop-in installed), not yet filed upstream — [thermald-no-wildcat-lake-entry.md](thermald-no-wildcat-lake-entry.md) |
 | `turbostat` | Can't read package C-state residency | Not filed |
 | `intel_idle` | Falls back to ACPI `_CST` | Reported to linux-pm 2026-08-05, answered same day: deliberate, pending measurement |
 
 `intel_idle` turns out not to belong with the other three. Those are
 lookup tables nobody has updated yet. This one is a deliberate hold
 pending data, which is a different and more defensible thing.
+
+The `thermald` fix (2026-08-07) sharpens that distinction rather than
+blurring it. Its table entry carries an `adaptive_only` flag and no
+thermal constants at all (the platform's own GDDV firmware tables supply
+every number), so adding `0xD5` there asserts nothing about the silicon
+and needed no measurement. That is precisely the property this driver's
+table lacks. Same missing model ID, opposite correct response.
