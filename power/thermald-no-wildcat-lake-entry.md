@@ -11,6 +11,11 @@ Net effect is a **performance** change, not a cooling one: sustained
 power ceiling went 15W → 25W. Read "What this actually changed" before
 assuming this made the laptop run cooler. It did not.
 
+Load-tested 2026-08-07: the throttle-*down* half of the control loop
+never fires under CPU load, because GDDV binds the passive trip to
+`SEN1`, a platform thermistor that saturates ~26°C below the die. So the
+practical effect is the power uplift alone.
+
 ## Symptom
 
 `thermald.service` starts at boot and immediately exits. It reports
@@ -237,7 +242,22 @@ works, so the laptop runs cooler") is backwards.
 |---|---|---|
 | MMIO PL1 | 15W, static | 15W floor, 25W ceiling, dynamic |
 | Governed by | nothing in userspace | GDDV `Balance Mode-28C` |
-| Passive trips | unused | 54°C / 55°C on SEN1 → `rapl_controller_mmio` |
+| Passive trips | unused | 54°C / 55°C on SEN1 → `rapl_controller_mmio` (thermald-internal, see below) |
+
+Those 54/55°C trips are **thermald's own**, built from GDDV and polled
+internally. They are not kernel thermal-zone trips, and looking for them
+in sysfs is misleading: `thermal_zone2` (SEN1) advertises its two passive
+trips as disabled, with only the firmware backstops populated.
+
+```
+$ cd /sys/class/thermal/thermal_zone2   # SEN1
+$ cat trip_point_0_temp trip_point_1_temp    # the two "passive" trips
+-274000
+-274000
+$ cat trip_point_2_type trip_point_2_temp    # firmware backstop
+critical
+110050
+```
 
 Measured delta on
 `/sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_0_power_limit_uw`:
@@ -250,7 +270,9 @@ So under sustained load this machine now draws more power and runs
 "protected" it by never letting it approach a trip at all. What the fix
 buys is a closed loop in place of a blunt cap: above 54°C thermald walks
 PL1 back toward the 15W floor in 500mW steps, and releases it as things
-cool.
+cool. In practice that downward branch never fires here, for reasons in
+"The throttle-down path is dormant" below, so the working effect is
+simply a higher sustained ceiling.
 
 This was never a safety issue in either direction. Kernel thermal core,
 ACPI firmware trips, and hardware PROCHOT/TCC throttling all operate
@@ -276,15 +298,42 @@ for `TccOffset 0`; `/sys/devices/pci0000:00/0000:00:04.0/tcc_offset_degree_celsi
 already reads `0`, and the kernel rejects the redundant write. Nothing
 changes either way.
 
-### Not verified
+### The throttle-down path is dormant, not merely unverified
 
-The throttle-*down* direction was never observed. Six-core load for 60
-seconds peaked at 48°C on SEN1, six degrees under the 54°C trip, with PL1
-pinned at 25W throughout. The control loop is armed and correctly wired,
-but the downward behavior here is inferred from the code and trip
-configuration, not measured. Deliberately not pushed harder (2026-08-07):
-the mechanism is not in doubt, and cooking the laptop to watch a counter
-move was not worth it.
+Tested 2026-08-07 and **not reproducible by CPU load**, which turns out to
+be a property of the platform's policy rather than a gap in testing.
+
+Six cores of `openssl speed -evp aes-256-cbc` for four minutes. SEN1
+peaked at **49°C against the 54°C trip** and PL1 never left 25W. A second,
+longer soak (roughly seven minutes total, unintentionally) did not move it
+either: SEN1 stalled at 50°C.
+
+The reason is which sensor GDDV binds the trip to. `SEN1` is
+`\_SB_.IETM.SEN1`, a platform thermistor, not the die. It saturates far
+below the silicon:
+
+| Sensor | ACPI path | Peak under sustained 6-core load |
+|---|---|---|
+| **SEN1** (what the trip watches) | `\_SB_.IETM.SEN1` | **50°C** |
+| SEN2 | `\_SB_.IETM.SEN2` | 74°C |
+| TCPU | processor thermal device | 75°C |
+| `x86_pkg_temp` | package DTS | 76°C |
+
+A ~26°C gap. SEN1 climbed 38 → 49°C over the first four minutes and then
+essentially stopped, holding 50°C while the package went a further 17
+degrees higher. Any of the other three sensors would have crossed 54°C
+within the first two minutes.
+
+So the closed loop described above is real and correctly wired, but on
+this platform it is **effectively a hold-at-25W policy**. Reaching the
+passive trip would take high ambient temperature or a sustained combined
+CPU+GPU load, not CPU work alone. Not worth manufacturing to watch a
+counter move, and the practical effect of the fix is the 15W → 25W uplift
+with the throttle branch dormant.
+
+Worth flagging if this doc ever feeds an upstream conversation: binding
+the passive trip to the slowest-responding sensor in the platform is a
+firmware/GDDV choice, not thermald's. thermald implements what it is told.
 
 One oddity recorded rather than explained: thermald writes `25000000`
 while `constraint_0_max_power_uw` on the same MMIO domain advertises
